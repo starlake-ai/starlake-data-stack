@@ -290,6 +290,8 @@ services:
       AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
       AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL: 30
       AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL: 5
+      AIRFLOW__FAB__AUTH_BACKENDS: airflow.providers.fab.auth_manager.api.auth.backend.session,airflow.providers.fab.auth_manager.api.auth.backend.basic_auth
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
     entrypoint: >
       /bin/bash -c "
       sleep 10 &&
