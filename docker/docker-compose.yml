@@ -56,7 +56,7 @@ x-starlake-ui-common:
     SL_API_SECURE: false
     SL_API: true
     SL_API_SESSION_AS_HEADER: true
-    SL_API_HTTP_FRONT_URL: ${SL_API_HTTP_FRONT_URL:-http://starlake-ui}
+    SL_API_HTTP_FRONT_URL: ${SL_API_HTTP_FRONT_URL:-http://localhost:${SL_PORT:-80}}
     SL_API_HTTP_INTERFACE: 0.0.0.0
     SL_API_HTTP_PORT: 9900
     SL_LOG_LEVEL: ${SL_LOG_LEVEL:-info}
@@ -183,7 +183,7 @@ services:
       sleep 10 &&
       airflow db init &&
       airflow db migrate &&
-      airflow users create --username ${AIRFLOW_USERNAME:-admin} --firstname ${AIRFLOW_FIRSTNAME:-Admin} --lastname ${AIRFLOW_LASTNAME:-User} --role Admin --email ${AIRFLOW_EMAIL:-admin@example.com} --password ${AIRFLOW_PASSWORD:-admin}"
+      airflow users create --username ${AIRFLOW_USERNAME:-airflow} --firstname ${AIRFLOW_FIRSTNAME:-airflow} --lastname ${AIRFLOW_LASTNAME:-airflow} --role Admin --email ${AIRFLOW_EMAIL:-admin@example.com} --password ${AIRFLOW_PASSWORD:-airflow}"
 
   starlake-airflow:
     profiles:
@@ -203,7 +203,7 @@ services:
       retries: 60
     environment:
       <<: *airflow-common-env
-      AIRFLOW__WEBSERVER__BASE_URL: http://localhost${SL_PORT:-80}/airflow
+      AIRFLOW__WEBSERVER__BASE_URL: http://localhost:${SL_PORT:-80}/airflow/
       AIRFLOW__CORE__LOGGING_LEVEL: INFO
       AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: 30
       AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL: 5
@@ -257,7 +257,7 @@ services:
       dockerfile: Dockerfile_airflow3
     depends_on:
       <<: *airflow-common-depends-on
-    container_name: starlake-init-airflow-db
+    container_name: starlake-init-airflow3-db
     environment:
       <<: *airflow-common-env
     entrypoint: >
@@ -285,19 +285,23 @@ services:
       start_period: 60s
     environment:
       <<: *airflow-common-env
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'true'
       AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
-      AIRFLOW__API__BASE_URL: http://localhost${SL_PORT:-80}/airflow
+      AIRFLOW__SCHEDULER__STANDALONE_DAG_PROCESSOR: 'true'
+      AIRFLOW__API__BASE_URL: http://localhost:${SL_PORT:-80}/airflow/
       AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
-      AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL: 30
+      AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: 30
       AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL: 5
       AIRFLOW__FAB__AUTH_BACKENDS: airflow.providers.fab.auth_manager.api.auth.backend.session,airflow.providers.fab.auth_manager.api.auth.backend.basic_auth
       AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
     entrypoint: >
       /bin/bash -c "
       sleep 10 &&
+      airflow users create --username ${AIRFLOW_USERNAME:-airflow} --firstname ${AIRFLOW_FIRSTNAME:-airflow} --lastname ${AIRFLOW_LASTNAME:-airflow} --role Admin --email ${AIRFLOW_EMAIL:-admin@example.com} --password ${AIRFLOW_PASSWORD:-airflow} &&
       pip install --no-cache-dir starlake-airflow docker --upgrade --force-reinstall &&
       airflow api-server &
-      exec airflow scheduler"
+      airflow scheduler &
+      exec airflow dag-processor"
 
   starlake-ui-airflow3:
     profiles:
@@ -311,8 +315,8 @@ services:
       <<: *starlake-ui-common-env
       SL_API_ORCHESTRATOR_PRIVATE_URL: http://starlake-airflow:8080/airflow/
       LOAD_DAG_REF: airflow_load_shell
-      SL_API_AIRFLOW_VERSION: 3
       TRANSFORM_DAG_REF: airflow_transform_shell
+      SL_API_AIRFLOW_VERSION: 3
     entrypoint: >
       /bin/bash -c "
       sleep 10 &&
