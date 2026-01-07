@@ -47,6 +47,7 @@ x-starlake-ui-common:
     - 9900  # starlake-ui default port
   environment:
     &starlake-ui-common-env
+    SL_API_APP_TYPE: ${SL_API_APP_TYPE:-web}
     SL_HOME: /app/starlake
     SL_FS: file://
     SL_ENV:
@@ -376,6 +377,74 @@ services:
       SL_ASK_DB_TYPE: postgres
       SL_ASK_API_DOCS_USER: starlake
       SL_ASK_API_DOCS_PASSWORD: s3cret.Paw
+
+  starlake-gizmo:
+    profiles:
+      - gizmo
+    image: starlakeai/gizmo-on-demand:${SL_GIZMO_IMAGE_VERSION:-latest}
+    pull_policy: always
+    container_name: starlake-gizmo
+    restart: on-failure
+    depends_on:
+      starlake-proxy-airflow3:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-s", "http://starlake-gizmo:10900/health"]
+      interval: "5s"
+      retries: 60
+    ports:
+      - ${SL_GIZMO_PORT:-10900}:10900
+      - ${SL_GIZMO_MIN_PORT:-11900}-${SL_GIZMO_MAX_PORT:-12000}:${SL_GIZMO_MIN_PORT:-11900}-${SL_GIZMO_MAX_PORT:-12000}
+    environment:
+      - SL_GIZMO_ON_DEMAND_HOST=0.0.0.0
+      - SL_GIZMO_ON_DEMAND_PORT=10900
+      - SL_GIZMO_MIN_PORT=${SL_GIZMO_MIN_PORT:-11900}
+      - SL_GIZMO_MAX_PORT=${SL_GIZMO_MAX_PORT:-12000}
+      - SL_GIZMO_MAX_PROCESSES=${SL_GIZMO_MAX_PROCESSES:-10}
+      - SL_GIZMO_API_KEY=${SL_GIZMO_API_KEY:-a_secret_api_key}
+      - PG_HOST=starlake-db
+      - PG_PORT=5432
+      - PG_USERNAME=${SL_POSTGRES_USER:-dbuser}
+      - PG_PASSWORD=${SL_POSTGRES_PASSWORD:-dbuser123}
+      - GIZMOSQL_USERNAME=${GIZMOSQL_USERNAME:-gizmosql_user}
+      - GIZMOSQL_PASSWORD=${GIZMOSQL_PASSWORD:-gizmosql_password}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-a_very_secret_key}
+      - TLS_ENABLED=0
+    volumes:
+      - ${PROJECTS_DATA_PATH:-./projects}:/projects
+
+  minio:
+    profiles:
+      - minio
+    image: "quay.io/minio/minio:latest"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    command: [ "server", "--console-address", ":9001", "/data" ]
+    volumes:
+      - ./minio/data:/data
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio123
+  createbuckets:
+    profiles:
+      - minio
+    image: quay.io/minio/mc:RELEASE.2025-03-12T17-29-24Z
+    depends_on:
+      - minio
+    restart: on-failure
+    environment:
+      MINIO_ACCESS_KEY: minio
+      MINIO_SECRET_KEY: minio123
+      S3_ENDPOINT: http://minio:9000
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      /usr/bin/mc alias set dockerminio \$$S3_ENDPOINT \$$MINIO_ACCESS_KEY \$$MINIO_SECRET_KEY;
+      /usr/bin/mc mb --ignore-existing dockerminio/ducklake-files;
+      /usr/bin/mc mb --ignore-existing dockerminio/warehouse;
+      exit 0;
+      "
 
 volumes:
   pgdata:
