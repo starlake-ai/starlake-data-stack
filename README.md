@@ -1,4 +1,3 @@
-# Starlake Docker User Manual
 
 This guide provides instructions on how to run the Starlake Data Stack using Docker Compose. The configuration supports multiple orchestrators and services through Docker Compose profiles.
 
