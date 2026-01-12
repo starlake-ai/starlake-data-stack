@@ -93,7 +93,7 @@ _Note: You must specify the same profiles used to start the services to ensure t
 
 Once up, the services are accessible at the following default URLs:
 
-- **Starlake UI / Proxy**: `http://localhost:80` (or local port defined by `SL_PORT`)
+- **Starlake UI**: `http://localhost:80` (or local port defined by `SL_PORT`)
 
 ## Troubleshooting
 
