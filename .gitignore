@@ -4,3 +4,4 @@ hive-minio-trino/warehouse
 docker/airflow/logs
 docker/minio/data
 minio/minio
+minio/data
