@@ -30,10 +30,10 @@ RUN ln -s /app/starlake/starlake /usr/local/bin/starlake
 # Install gcloud sdk
 # RUN curl -sSL https://sdk.cloud.google.com | bash
 RUN curl https://dl.google.com/dl/cloudsdk/release/google-cloud-sdk.tar.gz > /tmp/google-cloud-sdk.tar.gz \
-  && mkdir -p /usr/local/gcloud \
-  && tar -C /usr/local/gcloud -xvf /tmp/google-cloud-sdk.tar.gz \
-  && ln -s /usr/local/gcloud/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud \
-  && rm /tmp/google-cloud-sdk.tar.gz
+    && mkdir -p /usr/local/gcloud \
+    && tar -C /usr/local/gcloud -xvf /tmp/google-cloud-sdk.tar.gz \
+    && ln -s /usr/local/gcloud/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud \
+    && rm /tmp/google-cloud-sdk.tar.gz
 
 # Switch back to the airflow user
 USER airflow

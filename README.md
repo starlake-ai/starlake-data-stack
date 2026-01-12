@@ -1,58 +1,128 @@
-# Starlake
+# Starlake Docker User Manual
 
-Starlake is a YAML based integrated declarative data stack that make files ingestion and SQL / Python transformations pipelines easy to build, maintain, and monitor.
-It also provides a rich and intuitive UI to build and manage your data pipelines.
-The core project is open source and can be found at [starlake-ai/starlake](https://github.com/starlake-ai/starlake)
+This guide provides instructions on how to run the Starlake Data Stack using Docker Compose. The configuration supports multiple orchestrators and services through Docker Compose profiles.
 
-## Running Starlake UI on Docker
+## Prerequisites
+
+- **Docker**: Ensure Docker is installed and running on your machine.
+- **Docker Compose**: Ensure Docker Compose is installed (usually included with Docker Desktop).
+
+## Quick Start
 
 Running Starlake on Docker is as easy as running a single command.
 This guide will walk you through the steps to run Starlake on Docker.
 
 1. Clone this repository
+
 ```bash
 git clone https://github.com/starlake-ai/starlake-docker.git
 ```
 
 2. Change directory to the cloned repository
+
 ```bash
 cd starlake-docker/docker
 ```
 
-3. Run the following command to start Starlake UI with Airflow on Docker
+3. Run the following command to start Starlake UI with Airflow and Gizmo on Docker
+
 ```bash
-docker compose up
+docker compose --profile airflow --profile gizmo up
 ```
 
-to run Starlake UI with Dagster on Docker, run the following command
+4. Open your browser and navigate to `http://localhost` to access Starlake UI
+
+## Configuration Variables
+
+The Docker Compose configuration uses environment variables which can be set in a `.env` file in this directory or exported in your shell.
+
+Common variables include:
+
+- `SL_API_HTTP_FRONT_URL`: URL for the Starlake Proxy/UI (default: `http://localhost:${SL_PORT:-80}`)
+- `SL_API_DOMAIN`: Domain for the Starlake Proxy/UI (default: `localhost`). This must be set if you are settings the `SL_API_HTTP_FRONT_URL` to a different host. Usually it is the same as the host of the `SL_API_HTTP_FRONT_URL` domain name.
+- `SL_PORT`: Port for the Starlake Proxy/UI (default: `80`)
+- `SL_DB_PORT`: Port for the Postgres Database (default: `5432`)
+- `SL_AI_PORT`: Port for the Starlake Agent (default: `8000`)
+- `PROJECTS_DATA_PATH`: Path to your projects directory (default: `./projects`)
+
+See the `docker-compose.yml` file for a full list of variables and their default values.
+
+## Running Starlake
+
+Starlake uses Docker Compose **profiles** to manage different configurations (e.g., Airflow 2 vs Airflow 3, Dagster). You must specify a profile when running commands.
+
+### Available Profiles
+
+- **`airflow`**: Runs Starlake with Airflow 2.
+- **`airflow3`**: Runs Starlake with Airflow 3 (experimental).
+- **`dagster`**: Runs Starlake with Dagster (requires `docker-compose-dagster.yml` if running separately, but defined in main compose for some services).
+- **`gizmo`**: Runs the Starlake Gizmo service.
+- **`minio`**: Runs MinIO Object Storage.
+- **`snowflake`**: Profile for Snowflake integration.
+
+### Start Services
+
+To start the stack with a specific profile (e.g., `airflow`):
+
 ```bash
-docker compose -f docker-compose-dagster.yml up
+docker compose --profile airflow up -d
 ```
 
-to run Starlake UI with Snowflake orchestrator, run the following command
+To run with Airflow 3:
+
 ```bash
-docker compose -f docker-compose-snowflake.yml up
+docker compose --profile airflow3 up -d
 ```
 
+To include multiple profiles (e.g., Airflow and MinIO and Gizmo):
 
-To run on a different port, set the `SL_PORT` environment variable. For example, to run on port 8080, run the following command
 ```bash
-SL_PORT=8080 docker-compose up
+docker compose --profile airflow --profile minio --profile gizmo up -d
 ```
 
-4. Open your browser and navigate to `http://localhost` or if you chose a different port `http://localhost:$SL_PORT` to access Starlake UI
+### Stop Services
 
-That's it! You have successfully started Starlake UI on Docker.
+To stop the services:
 
-> **Note**
-> 
-> Whenever you update using git pull, run docker-compose with the __--build__ flag:
-> ``` docker compose up --build ```
+```bash
+docker compose --profile airflow --profile minio --profile gizmo down
+```
 
->  If you are affected by this [Docker issue](https://github.com/docker/for-mac/issues/7583), please upgrade your Docker install.
+_Note: You must specify the same profiles used to start the services to ensure they are all stopped correctly._
+
+## Accessing Services
+
+Once up, the services are accessible at the following default URLs:
+
+- **Starlake UI / Proxy**: `http://localhost:80` (or local port defined by `SL_PORT`)
+
+## Troubleshooting
+
+- **Check Logs**:
+  ```bash
+  docker compose --profile airflow logs -f
+  ```
+- **Rebuild Images**:
+  If you need to update the images or changes in Dockerfiles:
+  ```bash
+  docker compose --profile airflow build
+  ```
+- **Database Persistence**:
+  Postgres data is persisted in the `pgdata` volume. To reset the database, you may need to remove this volume:
+  ```bash
+  docker compose down -v
+  ```
+  > **Note**
+  >
+  > Whenever you update using git pull, run docker-compose with the **--build** flag:
+  > `docker compose up --build`
+
+> If you are affected by this [Docker issue](https://github.com/docker/for-mac/issues/7583), please upgrade your Docker install.
+
 ## Mounting external projects
 
 If you have any starlake container projects and want to mount it:
+
 - run `setup_mac_nfs.sh` if you are on mac in order to expose your folder via NFS.
   Modify the root folder to share if necessary. By default it is set to /user.
   This change is not specific to starlake and may be used in other container.
@@ -87,19 +157,10 @@ Starlake container folder should contain the starlake project folder:
 
 If you have many container projects, create as many volume as needed.
 
-### Limit
-
-- Currently, we cannot mount the starlake projects directory directly under the mounted `/external_projects`. Subfolders of the mounted external project can't be accessed correctly.
-- This feature has been tested only on mac at the moment
-
-
 ## Stopping Starlake UI
+
 To stop Starlake UI, run the following command in the same directory
+
 ```bash
 docker compose down
 ```
-
-
-
-
-

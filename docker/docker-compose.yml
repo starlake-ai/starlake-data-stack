@@ -204,7 +204,7 @@ services:
       retries: 60
     environment:
       <<: *airflow-common-env
-      AIRFLOW__WEBSERVER__BASE_URL: http://localhost:${SL_PORT:-80}/airflow/
+      AIRFLOW__WEBSERVER__BASE_URL: ${SL_API_HTTP_FRONT_URL:-http://localhost:${SL_PORT:-80}}/airflow
       AIRFLOW__CORE__LOGGING_LEVEL: INFO
       AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: 30
       AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL: 5
@@ -289,7 +289,7 @@ services:
       AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'true'
       AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
       AIRFLOW__SCHEDULER__STANDALONE_DAG_PROCESSOR: 'true'
-      AIRFLOW__API__BASE_URL: http://localhost:${SL_PORT:-80}/airflow/
+      AIRFLOW__API__BASE_URL: ${SL_API_HTTP_FRONT_URL:-http://localhost:${SL_PORT:-80}}/airflow
       AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
       AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: 30
       AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL: 5
@@ -386,8 +386,12 @@ services:
     container_name: starlake-gizmo
     restart: on-failure
     depends_on:
+      starlake-proxy-airflow:
+        condition: service_healthy
+        required: false
       starlake-proxy-airflow3:
         condition: service_healthy
+        required: false
     healthcheck:
       test: ["CMD", "curl", "-s", "http://starlake-gizmo:10900/health"]
       interval: "5s"
