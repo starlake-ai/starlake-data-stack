@@ -47,6 +47,7 @@ x-starlake-ui-common:
     - 9900  # starlake-ui default port
   environment:
     &starlake-ui-common-env
+    SL_API_GIZMO_ON_DEMAND_URL: http://starlake-gizmo:10900
     SL_API_APP_TYPE: ${SL_API_APP_TYPE:-web}
     SL_HOME: /app/starlake
     SL_FS: file://
@@ -88,6 +89,7 @@ x-starlake-ui-common:
     SL_API_DOCS_USERS: starlake
     SL_API_DOCS_USER: starlake
     SL_API_DOCS_PASSWORD: s3cret.Paw
+    SL_DUCKDB_HOME: /projects
   volumes:
     - ./scripts/starlake:/usr/local/bin/starlake:ro
     - ${PROJECTS_DATA_PATH:-./projects}:/projects
@@ -381,7 +383,7 @@ services:
   starlake-gizmo:
     profiles:
       - gizmo
-    image: starlakeai/gizmo-on-demand:${SL_GIZMO_IMAGE_VERSION:-latest}
+    image: starlakeai/gizmo-on-demand:${SL_GIZMO_IMAGE_VERSION:-snapshot}
     pull_policy: always
     container_name: starlake-gizmo
     restart: on-failure
