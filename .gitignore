@@ -5,3 +5,4 @@ docker/airflow/logs
 docker/minio/data
 minio/minio
 minio/data
+logs

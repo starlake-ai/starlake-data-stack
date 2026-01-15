@@ -20,7 +20,7 @@ services:
       test: ["CMD", "pg_isready", "-q", "-U", "${SL_POSTGRES_USER:-dbuser}", "-d", "${SL_POSTGRES_DB:-starlake}"]
       interval: "1s"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - ./pgdata:/var/lib/postgresql/data
       - ./conf/postgres/postgresql.conf:/etc/postgresql/postgresql.conf
       - ./scripts/airflow/init-database.sh:/docker-entrypoint-initdb.d/init-airflow-database.sh
       - ./scripts/dagster/init-database.sh:/docker-entrypoint-initdb.d/init-dagster-database.sh

@@ -1,0 +1,1 @@
+docker compose --profile airflow up  --build

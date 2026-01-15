@@ -89,7 +89,6 @@ x-starlake-ui-common:
     SL_API_DOCS_USERS: starlake
     SL_API_DOCS_USER: starlake
     SL_API_DOCS_PASSWORD: s3cret.Paw
-    SL_DUCKDB_HOME: /projects
   volumes:
     - ./scripts/starlake:/usr/local/bin/starlake:ro
     - ${PROJECTS_DATA_PATH:-./projects}:/projects
@@ -161,7 +160,7 @@ services:
       test: ["CMD", "pg_isready", "-q", "-U", "${SL_POSTGRES_USER:-dbuser}", "-d", "${SL_POSTGRES_DB:-starlake}"]
       interval: "1s"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - ./pgdata:/var/lib/postgresql/data
       - ./conf/postgres/postgresql.conf:/etc/postgresql/postgresql.conf
       - ./scripts/airflow/init-database.sh:/docker-entrypoint-initdb.d/init-airflow-database.sh
       - ./scripts/dagster/init-database.sh:/docker-entrypoint-initdb.d/init-dagster-database.sh
@@ -383,7 +382,7 @@ services:
   starlake-gizmo:
     profiles:
       - gizmo
-    image: starlakeai/gizmo-on-demand:${SL_GIZMO_IMAGE_VERSION:-snapshot}
+    image: starlakeai/gizmo-on-demand:${SL_GIZMO_IMAGE_VERSION:-snapshot-slim}
     pull_policy: always
     container_name: starlake-gizmo
     restart: on-failure
@@ -451,6 +450,3 @@ services:
       /usr/bin/mc mb --ignore-existing dockerminio/warehouse;
       exit 0;
       "
-
-volumes:
-  pgdata:

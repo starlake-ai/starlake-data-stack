@@ -1,4 +1,3 @@
-
 This guide provides instructions on how to run the Starlake Data Stack using Docker Compose. The configuration supports multiple orchestrators and services through Docker Compose profiles.
 
 ## Prerequisites
@@ -6,39 +5,33 @@ This guide provides instructions on how to run the Starlake Data Stack using Doc
 - **Docker**: Ensure Docker is installed and running on your machine.
 - **Docker Compose**: Ensure Docker Compose is installed (usually included with Docker Desktop).
 
-
 ## Starlake Prebuilt Data Stacks
 
 Starlake provides prebuilt data stacks that can be run with a single command. These data stacks are designed to provide a ready-to-use data management solution out of the box.
 
 ### Pragmatic Open Data Stack
-![Pragmatic Open Data Stack](pragmatic-open-data-stack.png)
 
+![Pragmatic Open Data Stack](images/pragmatic-open-data-stack.png)
 
 The Pragmatic Open Data Stack is a ready-to-use data stack that includes Starlake with Airflow and Gizmo. It is designed to provide a comprehensive data management solution out of the box.
 
-
 ### Pragmatic BigQuery Data Stack
-![Pragmatic BigQuery Data Stack](pragmatic-bigquery-data-stack.png)
 
+![Pragmatic BigQuery Data Stack](images/pragmatic-bigquery-data-stack.png)
 
 The Pragmatic BigQuery Data Stack is a ready-to-use data stack that includes Starlake with Airflow . It is designed to provide a comprehensive data management solution out of the box for BigQuery users.
 
-
 ### Pragmatic Snowflake Data Stack
 
-![Pragmatic Snowflake Data Stack](pragmatic-snowflake-data-stack.png)
+![Pragmatic Snowflake Data Stack](images/pragmatic-snowflake-data-stack.png)
 
 The Pragmatic Snowflake Data Stack is a ready-to-use data stack that includes Starlake with Snoflake Tasks. It is designed to provide a comprehensive data management solution out of the box for Snowflake users.
 
+### Pragmatic AWS Redshift Data Stack
 
-### Pragmatic AWS Redshift Data Stack 
-
-![Pragmatic Redshift Data Stack](pragmatic-redshift-data-stack.png)
+![Pragmatic Redshift Data Stack](images/pragmatic-redshift-data-stack.png)
 
 The Pragmatic W Redshift Data Stack is a ready-to-use data stack that includes Starlake with Airflow. It is designed to provide a comprehensive data management solution out of the box for AWS Redshift users.
-
-
 
 ## Quick Start
 
@@ -48,13 +41,13 @@ This guide will walk you through the steps to run Starlake on Docker.
 1. Clone this repository
 
 ```bash
-git clone https://github.com/starlake-ai/starlake-docker.git
+git clone https://github.com/starlake-ai/starlake-data-stack.git
 ```
 
 2. Change directory to the cloned repository
 
 ```bash
-cd starlake-docker/docker
+cd starlake-data-stack
 ```
 
 3. Run the following command to start Starlake UI with Airflow and Gizmo on Docker
@@ -62,7 +55,6 @@ cd starlake-docker/docker
 ```bash
 docker compose --profile airflow --profile gizmo up
 ```
-
 
 4. Open your browser and navigate to `http://localhost` to access Starlake UI
 
@@ -98,8 +90,6 @@ Starlake uses Docker Compose **profiles** to manage different configurations (e.
 
 To start the Pragmatic Duck Data Stack with Airflow & Minio and Gizmo, use the following command:
 
-
-
 ```bash
 SL_API_APP_TYPE=ducklake docker compose --profile airflow --profile minio --profile gizmo up -d
 ```
@@ -122,14 +112,11 @@ To run with Airflow 3 (experimental), use the following command:
 docker compose --profile airflow3 up -d
 ```
 
-
 Tio run with Dagster, use the following command:
 
 ```bash
 docker compose --profile dagster up -d
 ```
-
-
 
 ### Stop Services
 
