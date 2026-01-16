@@ -6,3 +6,5 @@ docker/minio/data
 minio/minio
 minio/data
 logs
+pgdata
+projects
