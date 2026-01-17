@@ -53,7 +53,7 @@ cd starlake-data-stack
 3. Run the following command to start Starlake UI with Airflow and Gizmo on Docker
 
 ```bash
-docker compose --profile airflow --profile gizmo up
+COMPOSE_PROFILES=airflow,gizmo SL_API_APP_TYPE=ducklake docker compose up  --build
 ```
 
 4. Open your browser and navigate to `http://localhost` to access Starlake UI
@@ -91,7 +91,7 @@ Starlake uses Docker Compose **profiles** to manage different configurations (e.
 To start the Pragmatic Duck Data Stack with Airflow and Gizmo on local file system, use the following command:
 
 ```bash
-SL_API_APP_TYPE=ducklake docker compose --profile airflow --profile gizmo up -d
+COMPOSE_PROFILES=airflow,gizmo SL_API_APP_TYPE=ducklake docker compose up  --build
 ```
 
 or simply
@@ -103,25 +103,25 @@ $ ./dags-stack.sh
 To start the Pragmatic Duck Data Stack with Airflow & Minio and Gizmo, use the following command:
 
 ```bash
-SL_API_APP_TYPE=ducklake docker compose --profile airflow --profile minio --profile gizmo up -d
+COMPOSE_PROFILES=airflow,minio,gizmo SL_API_APP_TYPE=ducklake docker compose up  --build
 ```
 
 To start the stack with a specific profile (e.g., `airflow`) and address any Cloud Datawarehouses, use the following commands:
 
 ```bash
-docker compose --profile airflow up -d
+COMPOSE_PROFILES=airflow docker compose up  --build
 ```
 
 To run with Airflow 3 (experimental), use the following command:
 
 ```bash
-docker compose --profile airflow3 up -d
+COMPOSE_PROFILES=airflow3 docker compose up  --build
 ```
 
 Tio run with Dagster, use the following command:
 
 ```bash
-docker compose --profile dagster up -d
+COMPOSE_PROFILES=dagster docker compose up  --build
 ```
 
 ### Stop Services
@@ -129,7 +129,7 @@ docker compose --profile dagster up -d
 To stop the services:
 
 ```bash
-docker compose --profile airflow --profile minio --profile gizmo down
+COMPOSE_PROFILES=airflow,gizmo,minio SL_API_APP_TYPE=ducklake docker compose up  --build
 ```
 
 _Note: You must specify the same profiles used to start the services to ensure they are all stopped correctly._
