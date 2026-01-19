@@ -13,25 +13,25 @@ Starlake provides prebuilt data stacks that can be run with a single command. Th
 
 ![Pragmatic Open Data Stack](images/pragmatic-open-data-stack.png)
 
-The Pragmatic Open Data Stack is a ready-to-use data stack that includes Starlake with Airflow and Gizmo. It is designed to provide a comprehensive data management solution out of the box.
+The Pragmatic Open Data Stack is a ready-to-use data stack that includes Starlake with Airflow, DuckLake, Minio (optional)and Gizmo.
 
 ### Pragmatic BigQuery Data Stack
 
 ![Pragmatic BigQuery Data Stack](images/pragmatic-bigquery-data-stack.png)
 
-The Pragmatic BigQuery Data Stack is a ready-to-use data stack that includes Starlake with Airflow . It is designed to provide a comprehensive data management solution out of the box for BigQuery users.
+The Pragmatic BigQuery Data Stack is a ready-to-use data stack that includes Starlake with Airflow .
 
 ### Pragmatic Snowflake Data Stack
 
 ![Pragmatic Snowflake Data Stack](images/pragmatic-snowflake-data-stack.png)
 
-The Pragmatic Snowflake Data Stack is a ready-to-use data stack that includes Starlake with Snoflake Tasks. It is designed to provide a comprehensive data management solution out of the box for Snowflake users.
+The Pragmatic Snowflake Data Stack is a ready-to-use data stack that includes Starlake with Snoflake Tasks.
 
 ### Pragmatic AWS Redshift Data Stack
 
 ![Pragmatic Redshift Data Stack](images/pragmatic-redshift-data-stack.png)
 
-The Pragmatic W Redshift Data Stack is a ready-to-use data stack that includes Starlake with Airflow. It is designed to provide a comprehensive data management solution out of the box for AWS Redshift users.
+The Pragmatic W Redshift Data Stack is a ready-to-use data stack that includes Starlake with Airflow.
 
 ## Quick Start
 
