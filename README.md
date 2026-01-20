@@ -88,22 +88,16 @@ Starlake uses Docker Compose **profiles** to manage different configurations (e.
 
 ### Start Services
 
-To start the Pragmatic Duck Data Stack with Airflow and Gizmo on local file system, use the following command:
+To start the Pragmatic Duck Data Stack with Airflow & Minio and Gizmo, use the following command:
 
 ```bash
-COMPOSE_PROFILES=airflow,gizmo SL_API_APP_TYPE=ducklake docker compose up  --build
+COMPOSE_PROFILES=airflow,minio,gizmo SL_API_APP_TYPE=ducklake docker compose up  --build
 ```
 
 or simply
 
 ```
 $ ./dags-stack.sh
-```
-
-To start the Pragmatic Duck Data Stack with Airflow & Minio and Gizmo, use the following command:
-
-```bash
-COMPOSE_PROFILES=airflow,minio,gizmo SL_API_APP_TYPE=ducklake docker compose up  --build
 ```
 
 To start the stack with a specific profile (e.g., `airflow`) and address any Cloud Datawarehouses, use the following commands:
@@ -129,7 +123,7 @@ COMPOSE_PROFILES=dagster docker compose up  --build
 To stop the services:
 
 ```bash
-COMPOSE_PROFILES=airflow,gizmo,minio SL_API_APP_TYPE=ducklake docker compose up  --build
+COMPOSE_PROFILES=airflow,gizmo,minio SL_API_APP_TYPE=ducklake docker compose down
 ```
 
 _Note: You must specify the same profiles used to start the services to ensure they are all stopped correctly._
