@@ -170,7 +170,8 @@ services:
     command: postgres -c 'config_file=/etc/postgresql/postgresql.conf'
     healthcheck:
       test: ["CMD", "pg_isready", "-q", "-U", "${SL_POSTGRES_USER:-dbuser}", "-d", "${SL_POSTGRES_DB:-starlake}"]
-      interval: "1s"
+      interval: "5s"
+      retries: 5
     volumes:
       - ./pgdata:/var/lib/postgresql/data
       - ./conf/postgres/postgresql.conf:/etc/postgresql/postgresql.conf
