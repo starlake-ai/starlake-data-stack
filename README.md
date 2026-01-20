@@ -88,22 +88,16 @@ Starlake uses Docker Compose **profiles** to manage different configurations (e.
 
 ### Start Services
 
-To start the Pragmatic Duck Data Stack with Airflow and Gizmo on local file system, use the following command:
+To start the Pragmatic Duck Data Stack with Airflow & Minio and Gizmo, use the following command:
 
 ```bash
-COMPOSE_PROFILES=airflow,gizmo SL_API_APP_TYPE=ducklake docker compose up  --build
+COMPOSE_PROFILES=airflow,minio,gizmo SL_API_APP_TYPE=ducklake docker compose up  --build
 ```
 
 or simply
 
 ```
 $ ./dags-stack.sh
-```
-
-To start the Pragmatic Duck Data Stack with Airflow & Minio and Gizmo, use the following command:
-
-```bash
-COMPOSE_PROFILES=airflow,minio,gizmo SL_API_APP_TYPE=ducklake docker compose up  --build
 ```
 
 To start the stack with a specific profile (e.g., `airflow`) and address any Cloud Datawarehouses, use the following commands:
@@ -163,43 +157,6 @@ Once up, the services are accessible at the following default URLs:
 
 > If you are affected by this [Docker issue](https://github.com/docker/for-mac/issues/7583), please upgrade your Docker install.
 
-## Mounting external projects
-
-If you have any starlake container projects and want to mount it:
-
-- run `setup_mac_nfs.sh` if you are on mac in order to expose your folder via NFS.
-  Modify the root folder to share if necessary. By default it is set to /user.
-  This change is not specific to starlake and may be used in other container.
-- comment `- external_projects_data:/external_projects` in the `volumes` section of the starlake-nas container
-- uncomment `- starlake-prj-nfs-mount:/external_projects` right below the line above in the docker compose file
-- go to the end of the file and comment uncomment the `starlake-prj-nfs-mount:` section as follows:
-
-```
-  starlake-prj-nfs-mount:
-    driver: local
-    driver_opts:
-      type: nfs
-      o: addr=host.docker.internal,rw,nolock,hard,nointr,nfsvers=3
-      device: ":/path_to_starlake_project_container" # absolute path to folder on your host where projects are located.
-```
-
-Starlake container folder should contain the starlake project folder:
-
-```
- /path_to_starlake_project_container
-   |
-    - my_first_starlake_project
-        |
-         - metadata
-         - ...
-   |
-    - my_second_starlake_project
-        |
-         - metadata
-         - ...
-```
-
-If you have many container projects, create as many volume as needed.
 
 ## Stopping Starlake UI
 
