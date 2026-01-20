@@ -129,7 +129,7 @@ COMPOSE_PROFILES=dagster docker compose up  --build
 To stop the services:
 
 ```bash
-COMPOSE_PROFILES=airflow,gizmo,minio SL_API_APP_TYPE=ducklake docker compose up  --build
+COMPOSE_PROFILES=airflow,gizmo,minio SL_API_APP_TYPE=ducklake docker compose down
 ```
 
 _Note: You must specify the same profiles used to start the services to ensure they are all stopped correctly._
@@ -138,7 +138,7 @@ _Note: You must specify the same profiles used to start the services to ensure t
 
 Once up, the services are accessible at the following default URLs:
 
-- **Starlake UI**: `http://localhost:80` (or local port defined by `SL_PORT`)
+- **Starlake UI**: `http://localhost` (or local port defined by `SL_PORT`)
 
 ## Troubleshooting
 
