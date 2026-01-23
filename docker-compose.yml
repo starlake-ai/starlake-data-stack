@@ -31,6 +31,7 @@ x-starlake-airflow:
       - ${PROJECTS_DATA_PATH:-./projects}:/projects
       - ${PROJECTS_DATA_PATH:-./projects}/dags:/opt/airflow/dags
       - ${AIRFLOW_LOGS:-./airflow/logs}:/opt/airflow/logs
+      - /Users/hayssams/.config:/home/airflow/.config
 
 x-starlake-ui-common:
   &starlake-ui-common
@@ -308,8 +309,9 @@ services:
       AIRFLOW__SCHEDULER__STANDALONE_DAG_PROCESSOR: 'true'
       AIRFLOW__API__BASE_URL: ${SL_API_HTTP_FRONT_URL:-http://localhost:${SL_PORT:-80}}/airflow
       AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
-      AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: 30
-      AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL: 5
+      #AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: ${AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL:-60}
+      #AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL: ${AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL:-10}
+      AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL: ${AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL:-30}
       AIRFLOW__FAB__AUTH_BACKENDS: airflow.providers.fab.auth_manager.api.auth.backend.session,airflow.providers.fab.auth_manager.api.auth.backend.basic_auth
       AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
     entrypoint: >
@@ -319,7 +321,9 @@ services:
       pip install --no-cache-dir starlake-airflow docker --upgrade --force-reinstall &&
       airflow api-server &
       airflow scheduler &
-      exec airflow dag-processor"
+      exec airflow dag-processor &
+      wait -n;
+      exit $?"
 
   starlake-ui-airflow3:
     profiles:
@@ -437,6 +441,8 @@ services:
       - TLS_ENABLED=0
     volumes:
       - ${PROJECTS_DATA_PATH:-./projects}:/projects
+      - /Users/hayssams/.config:/root/.config
+
 
   minio:
     profiles:
