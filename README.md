@@ -64,9 +64,9 @@ The Docker Compose configuration uses environment variables which can be set in 
 
 Common variables include:
 
-- `SL_API_HTTP_FRONT_URL`: URL for the Starlake Proxy/UI (default: `http://localhost:${SL_PORT:-80}`)
-- `SL_API_DOMAIN`: Domain for the Starlake Proxy/UI (default: `localhost`). This must be set if you are settings the `SL_API_HTTP_FRONT_URL` to a different host. Usually it is the same as the host of the `SL_API_HTTP_FRONT_URL` domain name.
-- `SL_PORT`: Port for the Starlake Proxy/UI (default: `80`)
+- `SL_API_HTTP_FRONT_URL`: URL for the Starlake UI (default: `http://localhost:${SL_PORT:-80}`)
+- `SL_API_DOMAIN`: Domain for the Starlake UI (default: `localhost`). This must be set if you are settings the `SL_API_HTTP_FRONT_URL` to a different host. Usually it is the same as the host of the `SL_API_HTTP_FRONT_URL` domain name.
+- `SL_PORT`: Port for the Starlake UI (default: `80`)
 - `SL_DB_PORT`: Port for the Postgres Database (default: `5432`)
 - `SL_AI_PORT`: Port for the Starlake Agent (default: `8000`)
 - `PROJECTS_DATA_PATH`: Path to your projects directory (default: `./projects`)

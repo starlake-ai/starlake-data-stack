@@ -51,7 +51,7 @@ x-starlake-ui-common:
     interval: "5s"
     retries: 60
   ports:
-    - 9900  # starlake-ui default port
+    - ${SL_PORT:-80}:9900  # starlake-ui default port
   environment:
     &starlake-ui-common-env
     SL_API_GIZMO_ON_DEMAND_URL: http://starlake-gizmo:10900
@@ -101,28 +101,6 @@ x-starlake-ui-common:
     - ${PROJECTS_DATA_PATH:-./projects}:/projects
     - ${EXTERNAL_PROJECTS_DATA_PATH:-./external_projects}:/external_projects
 
-x-starlake-proxy-common:
-  &starlake-proxy-common
-  image: starlakeai/starlake-proxy:${SL_IMAGE_VERSION:-0.1}
-  pull_policy: always
-  container_name: starlake-proxy
-  restart: on-failure
-  depends_on:
-    &starlake-proxy-common-depends-on
-    starlake-db:
-      condition: service_healthy
-  networks:
-    &airflow-common-networks
-    - starlake-network
-  healthcheck:
-    test: [ "CMD", "curl", "-s", "-I", "http://starlake-proxy:80/api/v1/health" ]
-    interval: "5s"
-    retries: 60
-  ports:
-    - ${SL_PORT:-80}:80  # starlake-proxy default port
-  environment:
-    NODE_ENV: docker
-    SL_PORT: ${SL_PORT:-80}
 
 x-starlake-projects-common:
   &starlake-projects-common
@@ -255,14 +233,6 @@ services:
       airflow db migrate &&
       /usr/bin/tini -- /app/run-api.sh"
 
-  starlake-proxy-airflow:
-    profiles:
-      - airflow
-    <<: *starlake-proxy-common
-    depends_on:
-      <<: *starlake-proxy-common-depends-on
-      starlake-ui-airflow:
-        condition: service_healthy
 
   # Airflow 3 services
   starlake-init-airflow3-db:
@@ -356,14 +326,6 @@ services:
       starlake-ui-airflow3:
         condition: service_healthy
 
-  starlake-proxy-airflow3:
-    profiles:
-      - airflow3
-    <<: *starlake-proxy-common
-    depends_on:
-      <<: *starlake-proxy-common-depends-on
-      starlake-ui-airflow3:
-        condition: service_healthy
 
 # Starlake Agent service
   starlake-agent:
@@ -395,7 +357,7 @@ services:
       SL_ASK_PG_DB: ${SL_POSTGRES_DB:-starlake}
       SL_ASK_PG_SERVER: starlake-db
       SL_ASK_PG_PORT: 5432
-      SL_ASK_API_SERVER_URL: http://starlake-proxy:80
+      SL_ASK_API_SERVER_URL: http://starlake-ui:9900
       SL_ASK_HOST: 0.0.0.0
       SL_ASK_DB_TYPE: postgres
       SL_ASK_API_DOCS_USER: starlake
@@ -409,10 +371,10 @@ services:
     container_name: starlake-gizmo
     restart: on-failure
     depends_on:
-      starlake-proxy-airflow:
+      starlake-ui-airflow:
         condition: service_healthy
         required: false
-      starlake-proxy-airflow3:
+      starlake-ui-airflow3:
         condition: service_healthy
         required: false
     healthcheck:

@@ -38,7 +38,7 @@ services:
       interval: "5s"
       retries: 60
     ports:
-      - 9900  # starlake-ui default port
+      - ${SL_PORT:-80}:9900  # starlake-ui default port
     environment:
       - SL_HOME=/app/starlake
       - SL_FS=file://
@@ -107,25 +107,6 @@ services:
     volumes:
       - ${PROJECTS_DATA_PATH:-./projects}:/projects
 
-  starlake-proxy:
-      image: starlakeai/starlake-proxy:${SL_IMAGE_VERSION:-0.1}
-      pull_policy: always
-      container_name: starlake-proxy
-      restart: on-failure
-      depends_on:
-        starlake-db:
-          condition: service_healthy
-        starlake-ui:
-          condition: service_healthy
-      healthcheck:
-        test: [ "CMD", "curl", "-s", "-I", "http://starlake-proxy:80/api/v1/health" ]
-        interval: "5s"
-        retries: 60
-      ports:
-        - ${SL_PORT:-80}:80  # starlake-proxy default port
-      environment:
-        - NODE_ENV=docker
-        - SL_PORT=${SL_PORT:-80}
 
   starlake-agent:
     image: starlakeai/starlake-1.5-ask:0.1
@@ -149,7 +130,7 @@ services:
       - SL_ASK_PG_DB=${SL_POSTGRES_DB:-starlake}
       - SL_ASK_PG_SERVER=starlake-db
       - SL_ASK_PG_PORT=5432
-      - SL_ASK_API_SERVER_URL=http://starlake-proxy:80
+      - SL_ASK_API_SERVER_URL=http://starlake-ui:9900
       - SL_ASK_HOST=0.0.0.0
       - SL_ASK_DB_TYPE=postgres
       - SL_ASK_API_DOCS_USER=starlake
