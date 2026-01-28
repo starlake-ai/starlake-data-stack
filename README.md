@@ -88,7 +88,7 @@ Starlake uses Docker Compose **profiles** to manage different configurations (e.
 
 ### Start Services
 
-To start the Pragmatic Duck Data Stack with Airflow & Minio and Gizmo, use the following command:
+To start the Pragmatic Duck Data Stack with Airflow and Gizmo on local file system, use the following command:
 
 ```bash
 COMPOSE_PROFILES=airflow,minio,gizmo SL_API_APP_TYPE=ducklake docker compose up  --build
