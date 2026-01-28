@@ -1,0 +1,303 @@
+{{- if .Values.airflow.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "starlake.fullname" . }}-airflow
+  labels:
+    {{- include "starlake.componentLabels" (dict "component" "airflow" "context" .) | nindent 4 }}
+spec:
+  replicas: {{ .Values.airflow.webserver.replicas }}
+  selector:
+    matchLabels:
+      {{- include "starlake.componentSelectorLabels" (dict "component" "airflow" "context" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "starlake.componentSelectorLabels" (dict "component" "airflow" "context" .) | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "starlake.serviceAccountName" . }}
+      # Note: Airflow image has its own user (airflow/50000), don't override with podSecurityContext
+      initContainers:
+        {{- include "starlake.waitForPostgresql" . | nindent 8 }}
+        {{- if .Values.airflow.installPythonPackages }}
+        # Copy Starlake CLI from UI image (only needed when using official Airflow image)
+        # When using custom image (Dockerfile_airflow), starlake is already installed
+        - name: setup-starlake-tools
+          image: "{{ .Values.ui.image.repository }}:{{ .Values.ui.image.tag }}"
+          imagePullPolicy: {{ .Values.ui.image.pullPolicy }}
+          command:
+            - /bin/bash
+            - -c
+            - |
+              echo "=== Setting up Starlake tools for Airflow ==="
+
+              # Copy entire Starlake directory (contains starlake.sh and lib/)
+              echo "Copying Starlake CLI directory..."
+              mkdir -p /shared-tools/starlake
+              if [ -d "/app/starlake" ]; then
+                cp -r /app/starlake/* /shared-tools/starlake/ 2>/dev/null || true
+                echo "Copied from /app/starlake"
+                ls -la /shared-tools/starlake/
+              fi
+
+              # Copy gcloud SDK if available in UI image
+              if [ -d "/usr/local/gcloud" ]; then
+                echo "Copying Google Cloud SDK..."
+                cp -r /usr/local/gcloud /shared-tools/
+              fi
+
+              # Create wrapper scripts in bin directory
+              mkdir -p /shared-tools/bin
+
+              # Create a shell-mode starlake wrapper that executes locally (not via docker exec)
+              # This wrapper handles --options and calls the actual starlake.sh
+              cat > /shared-tools/bin/starlake << 'EOFSL'
+              #!/usr/bin/env bash
+              old_ifs="$IFS"
+
+              if [ "$#" -eq 0 ]; then
+                echo "No arguments provided. Usage: starlake <command> [args...]"
+                exit 1
+              fi
+
+              options=""
+              command="$1"
+              shift
+
+              arguments=()
+              while [ $# -gt 0 ]; do
+                  case "$1" in
+                      -o|--options) options="$2"; shift 2 ;;
+                      *) arguments+=("$1"); shift ;;
+                  esac
+              done
+
+              # Set Java home if available
+              if [ -d "/opt/java/openjdk" ]; then
+                export JAVA_HOME=/opt/java/openjdk
+                export PATH=$JAVA_HOME/bin:$PATH
+              fi
+
+              # Export environment variables from --options, if provided
+              if [ -n "$options" ]; then
+                  IFS=',' read -ra env_array <<< "$options"
+                  for env in "${env_array[@]}"; do
+                      name="${env%%=*}"
+                      value="${env#*=}"
+                      value="${value%\"}"
+                      value="${value#\"}"
+                      value="${value%\'}"
+                      value="${value#\'}"
+                      export "$name=$value"
+                  done
+                  IFS="$old_ifs"
+              fi
+
+              # Execute starlake directly (shell mode, not docker mode)
+              if [ -x "/shared-tools/starlake/starlake.sh" ]; then
+                exec /shared-tools/starlake/starlake.sh "$command" "${arguments[@]}" 2>&1
+              elif [ -x "/shared-tools/starlake/starlake" ]; then
+                exec /shared-tools/starlake/starlake "$command" "${arguments[@]}" 2>&1
+              elif [ -x "/usr/local/bin/starlake" ]; then
+                exec /usr/local/bin/starlake "$command" "${arguments[@]}" 2>&1
+              else
+                echo "ERROR: starlake executable not found"
+                exit 1
+              fi
+              EOFSL
+              chmod +x /shared-tools/bin/starlake
+
+              # gcloud wrapper (if SDK was copied)
+              if [ -d "/shared-tools/gcloud" ]; then
+                ln -sf /shared-tools/gcloud/google-cloud-sdk/bin/gcloud /shared-tools/bin/gcloud
+                ln -sf /shared-tools/gcloud/google-cloud-sdk/bin/gsutil /shared-tools/bin/gsutil
+              fi
+
+              echo "Tools setup complete!"
+              echo "Contents of /shared-tools:"
+              ls -la /shared-tools/
+              echo "Contents of /shared-tools/bin:"
+              ls -la /shared-tools/bin/
+              echo "Contents of /shared-tools/starlake:"
+              ls -la /shared-tools/starlake/ || echo "No starlake dir"
+          volumeMounts:
+            - name: shared-tools
+              mountPath: /shared-tools
+        {{- end }}
+        # Initialize Airflow DB directly in init container (more reliable than waiting for Job)
+        - name: init-airflow-db
+          image: "{{ .Values.airflow.image.repository }}:{{ .Values.airflow.image.tag }}"
+          imagePullPolicy: {{ .Values.airflow.image.pullPolicy }}
+          command:
+            - /bin/bash
+            - -c
+            - |
+              echo "Waiting for database to be ready..."
+              sleep 5
+              echo "Initializing Airflow database..."
+              airflow db init || airflow db migrate
+              echo "Creating Airflow admin user..."
+              airflow users create \
+                --username {{ .Values.airflow.admin.username }} \
+                --firstname {{ .Values.airflow.admin.firstname }} \
+                --lastname {{ .Values.airflow.admin.lastname }} \
+                --role Admin \
+                --email {{ .Values.airflow.admin.email }} \
+                --password {{ .Values.airflow.admin.password }} || echo "User already exists"
+              echo "Airflow database initialization complete!"
+          env:
+            - name: AIRFLOW__CORE__EXECUTOR
+              value: {{ .Values.airflow.executor | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "starlake.postgresql.secretName" . }}
+                  key: {{ include "starlake.postgresql.passwordKey" . }}
+            - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+              value: {{ include "starlake.postgresql.airflowConnectionString" . | quote }}
+            - name: AIRFLOW__CORE__LOAD_EXAMPLES
+              value: "false"
+      containers:
+        - name: airflow
+          image: "{{ .Values.airflow.image.repository }}:{{ .Values.airflow.image.tag }}"
+          imagePullPolicy: {{ .Values.airflow.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            # Java environment for Starlake CLI
+            - name: JAVA_HOME
+              value: /opt/java/openjdk
+            - name: AIRFLOW__CORE__EXECUTOR
+              value: {{ .Values.airflow.executor | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "starlake.postgresql.secretName" . }}
+                  key: {{ include "starlake.postgresql.passwordKey" . }}
+            - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+              value: {{ include "starlake.postgresql.airflowConnectionString" . | quote }}
+            - name: AIRFLOW__CORE__LOAD_EXAMPLES
+              value: "false"
+            - name: AIRFLOW__API__AUTH_BACKENDS
+              value: "airflow.api.auth.backend.basic_auth"
+            - name: SL_HOME
+              value: /app/starlake
+            - name: AIRFLOW__WEBSERVER__BASE_URL
+              {{- if .Values.airflow.baseUrl }}
+              value: {{ .Values.airflow.baseUrl | quote }}
+              {{- else }}
+              value: {{ include "starlake.frontendUrl" . }}/airflow
+              {{- end }}
+            - name: AIRFLOW__CORE__LOGGING_LEVEL
+              value: {{ .Values.airflow.logLevel | quote }}
+            - name: AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL
+              value: {{ .Values.airflow.dagDirListInterval | quote }}
+            - name: AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL
+              value: {{ .Values.airflow.dagMinFileProcessInterval | quote }}
+          command:
+            - /bin/bash
+            - -c
+            - |
+              echo "Waiting before starting Airflow..."
+              sleep 10
+
+              {{- if .Values.airflow.installPythonPackages }}
+              echo "Installing Python packages (like Dockerfile_airflow)..."
+              pip install --no-cache-dir \
+                starlake-airflow~=0.4 \
+                docker \
+                awscli \
+                apache-airflow-providers-amazon \
+                apache-airflow-providers-google \
+                --upgrade
+              {{- else }}
+              echo "Skipping pip install (packages pre-installed in image)"
+              {{- end }}
+
+              echo "Setting up Starlake tools in PATH..."
+              # Add shared-tools/bin to PATH for starlake, gcloud, gsutil
+              export PATH="/shared-tools/bin:$PATH"
+              # If using custom image, starlake is already in /usr/local/bin
+              if [ ! -f /usr/local/bin/starlake ]; then
+                ln -sf /shared-tools/bin/starlake /usr/local/bin/starlake 2>/dev/null || true
+                chmod +x /usr/local/bin/starlake 2>/dev/null || true
+              fi
+
+              echo "Starting Airflow webserver in background..."
+              airflow webserver &
+
+              echo "Starting Airflow scheduler..."
+              exec airflow scheduler
+          # Startup probe - allows slow startup (pip install + db init can take 2-3 min)
+          # Matches docker-compose: interval=5s, retries=60 = 5 min max
+          startupProbe:
+            httpGet:
+              path: /airflow/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 60
+          # Liveness probe - after startup succeeds
+          livenessProbe:
+            httpGet:
+              path: /airflow/health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          # Readiness probe
+          readinessProbe:
+            httpGet:
+              path: /airflow/health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.airflow.webserver.resources | nindent 12 }}
+          volumeMounts:
+            - name: shared-tools
+              mountPath: /shared-tools
+            - name: projects
+              mountPath: /projects
+            - name: projects
+              mountPath: /opt/airflow/dags
+              subPath: dags
+            {{- if .Values.airflow.logs.persistence.enabled }}
+            - name: logs
+              mountPath: /opt/airflow/logs
+            {{- end }}
+      volumes:
+        - name: shared-tools
+          emptyDir: {}
+        - name: projects
+          persistentVolumeClaim:
+            claimName: {{ include "starlake.fullname" . }}-projects
+        {{- if .Values.airflow.logs.persistence.enabled }}
+        - name: logs
+          persistentVolumeClaim:
+            claimName: {{ include "starlake.fullname" . }}-airflow-logs
+        {{- else }}
+        - name: logs
+          emptyDir: {}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
