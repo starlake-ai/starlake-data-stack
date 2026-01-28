@@ -1,0 +1,107 @@
+{{- if .Values.agent.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "starlake.fullname" . }}-agent
+  labels:
+    {{- include "starlake.componentLabels" (dict "component" "agent" "context" .) | nindent 4 }}
+spec:
+  replicas: {{ .Values.agent.replicas }}
+  selector:
+    matchLabels:
+      {{- include "starlake.componentSelectorLabels" (dict "component" "agent" "context" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "starlake.componentSelectorLabels" (dict "component" "agent" "context" .) | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "starlake.serviceAccountName" . }}
+      # Note: Agent image requires root user, so we don't apply podSecurityContext
+      initContainers:
+        {{- include "starlake.waitForPostgresql" . | nindent 8 }}
+      containers:
+      - name: agent
+        image: "{{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}"
+        imagePullPolicy: {{ .Values.agent.image.pullPolicy }}
+        # Note: Agent image requires root, disabling securityContext
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        env:
+        - name: HOME
+          value: /tmp
+        - name: UV_CACHE_DIR
+          value: /tmp/.cache/uv
+        - name: SL_ASK_APPLICATION_KEY
+          value: {{ .Values.agent.applicationKey | quote }}
+        - name: SL_ASK_STARLAKE_JSON_FOLDER
+          value: /app/starlake_ask/resources
+        - name: SL_ASK_PG_USER
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "starlake.postgresql.secretName" . }}
+              key: {{ include "starlake.postgresql.usernameKey" . }}
+        - name: SL_ASK_PG_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "starlake.postgresql.secretName" . }}
+              key: {{ include "starlake.postgresql.passwordKey" . }}
+        - name: SL_ASK_PG_DB
+          value: {{ include "starlake.postgresql.starlakeDatabase" . | quote }}
+        - name: SL_ASK_PG_SERVER
+          value: {{ include "starlake.postgresql.host" . | quote }}
+        - name: SL_ASK_PG_PORT
+          value: {{ include "starlake.postgresql.port" . | quote }}
+        - name: SL_ASK_API_SERVER_URL
+          value: http://{{ include "starlake.fullname" . }}-ui:{{ .Values.ui.service.port }}
+        - name: SL_ASK_HOST
+          value: 0.0.0.0
+        - name: SL_ASK_DB_TYPE
+          value: postgres
+        - name: SL_ASK_API_DOCS_USER
+          value: starlake
+        - name: SL_ASK_API_DOCS_PASSWORD
+          value: s3cret.Paw
+        # Startup probe - allows slow startup
+        # Agent Python app with uvicorn needs significant time to initialize
+        # initialDelaySeconds=30 gives time for Python deps to load
+        startupProbe:
+          httpGet:
+            path: /ask/health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 60
+        # Liveness probe
+        livenessProbe:
+          httpGet:
+            path: /ask/health
+            port: http
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+        # Readiness probe
+        readinessProbe:
+          httpGet:
+            path: /ask/health
+            port: http
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          {{- toYaml .Values.agent.resources | nindent 10 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
