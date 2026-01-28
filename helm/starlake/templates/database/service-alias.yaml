@@ -1,0 +1,16 @@
+{{- if .Values.postgresql.internal.enabled }}
+# Alias service for Docker Compose compatibility
+# Projects created in Docker Compose use "starlake-db" as the PostgreSQL hostname
+# This ExternalName service redirects "starlake-db" to the actual PostgreSQL service
+apiVersion: v1
+kind: Service
+metadata:
+  name: starlake-db
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "starlake.labels" . | nindent 4 }}
+    app.kubernetes.io/component: database-alias
+spec:
+  type: ExternalName
+  externalName: {{ include "starlake.postgresql.host" . }}.{{ .Release.Namespace }}.svc.cluster.local
+{{- end }}

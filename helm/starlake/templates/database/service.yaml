@@ -1,0 +1,18 @@
+{{- if .Values.postgresql.internal.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "starlake.fullname" . }}-postgresql
+  labels:
+    {{- include "starlake.componentLabels" (dict "component" "postgresql" "context" .) | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless service for StatefulSet
+  ports:
+  - name: postgresql
+    port: 5432
+    targetPort: postgresql
+    protocol: TCP
+  selector:
+    {{- include "starlake.componentSelectorLabels" (dict "component" "postgresql" "context" .) | nindent 4 }}
+{{- end }}

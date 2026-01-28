@@ -1,0 +1,139 @@
+{{- if .Values.postgresql.internal.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "starlake.fullname" . }}-postgresql
+  labels:
+    {{- include "starlake.componentLabels" (dict "component" "postgresql" "context" .) | nindent 4 }}
+spec:
+  serviceName: {{ include "starlake.fullname" . }}-postgresql
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "starlake.componentSelectorLabels" (dict "component" "postgresql" "context" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "starlake.componentSelectorLabels" (dict "component" "postgresql" "context" .) | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "starlake.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: postgresql
+        image: "{{ .Values.postgresql.internal.image.repository }}:{{ .Values.postgresql.internal.image.tag }}"
+        imagePullPolicy: {{ .Values.postgresql.internal.image.pullPolicy }}
+        {{- with .Values.securityContext }}
+        securityContext:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        ports:
+        - name: postgresql
+          containerPort: 5432
+          protocol: TCP
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "starlake.postgresql.secretName" . }}
+              key: {{ include "starlake.postgresql.usernameKey" . }}
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "starlake.postgresql.secretName" . }}
+              key: {{ include "starlake.postgresql.passwordKey" . }}
+        - name: POSTGRES_DB
+          value: {{ include "starlake.postgresql.starlakeDatabase" . | quote }}
+        - name: AIRFLOW_DB
+          value: {{ include "starlake.postgresql.airflowDatabase" . | quote }}
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        args:
+          - -c
+          - config_file=/etc/postgresql/postgresql.conf
+        # Startup probe - allows slow startup without affecting liveness
+        startupProbe:
+          exec:
+            command:
+              - /bin/sh
+              - -c
+              - exec pg_isready -q -U "{{ .Values.postgresql.credentials.username }}" -d "{{ .Values.postgresql.external.starlakeDatabase }}" -h 127.0.0.1 -p 5432
+          initialDelaySeconds: 5
+          periodSeconds: 2
+          timeoutSeconds: 3
+          failureThreshold: 30  # 30 * 2s = 60s max startup time
+        livenessProbe:
+          exec:
+            command:
+              - /bin/sh
+              - -c
+              - exec pg_isready -q -U "{{ .Values.postgresql.credentials.username }}" -d "{{ .Values.postgresql.external.starlakeDatabase }}" -h 127.0.0.1 -p 5432
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+              - /bin/sh
+              - -c
+              - exec pg_isready -q -U "{{ .Values.postgresql.credentials.username }}" -d "{{ .Values.postgresql.external.starlakeDatabase }}" -h 127.0.0.1 -p 5432
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        resources:
+          {{- toYaml .Values.postgresql.internal.resources | nindent 10 }}
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+        - name: config
+          mountPath: /etc/postgresql
+        - name: init-scripts
+          mountPath: /docker-entrypoint-initdb.d
+      volumes:
+      - name: config
+        configMap:
+          name: {{ include "starlake.fullname" . }}-postgresql-config
+      - name: init-scripts
+        configMap:
+          name: {{ include "starlake.fullname" . }}-scripts
+          items:
+          - key: init-airflow-database.sh
+            path: init-airflow-database.sh
+            mode: 0755
+      {{- if not .Values.postgresql.internal.persistence.enabled }}
+      - name: data
+        emptyDir: {}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if .Values.postgresql.internal.persistence.enabled }}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+      labels:
+        {{- include "starlake.componentLabels" (dict "component" "postgresql" "context" .) | nindent 8 }}
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      {{- with (include "starlake.storageClass" (dict "storageClass" .Values.postgresql.internal.persistence.storageClass "context" .)) }}
+      storageClassName: {{ . }}
+      {{- end }}
+      resources:
+        requests:
+          storage: {{ .Values.postgresql.internal.persistence.size }}
+  {{- end }}
+{{- end }}
