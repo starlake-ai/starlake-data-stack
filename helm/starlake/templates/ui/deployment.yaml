@@ -1,0 +1,250 @@
+{{- if .Values.ui.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "starlake.fullname" . }}-ui
+  labels:
+    {{- include "starlake.componentLabels" (dict "component" "ui" "context" .) | nindent 4 }}
+spec:
+  replicas: {{ .Values.ui.replicas }}
+  selector:
+    matchLabels:
+      {{- include "starlake.componentSelectorLabels" (dict "component" "ui" "context" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "starlake.componentSelectorLabels" (dict "component" "ui" "context" .) | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "starlake.serviceAccountName" . }}
+      # Note: UI image needs root for chmod on /projects volume
+      initContainers:
+      {{- include "starlake.waitForPostgresql" . | nindent 6 }}
+      {{- if .Values.airflow.enabled }}
+      - name: wait-for-airflow
+        image: busybox:1.35
+        imagePullPolicy: IfNotPresent
+        command:
+          - sh
+          - -c
+          - |
+            until nc -z {{ include "starlake.fullname" . }}-airflow 8080; do
+              echo "Waiting for Airflow..."
+              sleep 2
+            done
+            echo "Airflow is ready!"
+      {{- end }}
+      - name: install-starlake-airflow
+        image: "{{ .Values.ui.image.repository }}:{{ .Values.ui.image.tag }}"
+        imagePullPolicy: {{ .Values.ui.image.pullPolicy }}
+        command:
+          - /bin/bash
+          - -c
+          - |
+            echo "Installing starlake-airflow package..."
+            python3 -m pip install --break-system-packages --no-cache-dir starlake-airflow docker --upgrade
+            airflow db init || true
+            airflow db migrate || true
+            echo "Installation complete!"
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      containers:
+      - name: ui
+        image: "{{ .Values.ui.image.repository }}:{{ .Values.ui.image.tag }}"
+        imagePullPolicy: {{ .Values.ui.image.pullPolicy }}
+        # Note: UI needs root privileges for volume operations
+        ports:
+        - name: http
+          containerPort: 9900
+          protocol: TCP
+        env:
+        - name: SL_HOME
+          value: /app/starlake
+        - name: SL_FS
+          value: "file://"
+        - name: SL_ENV
+          value: ""
+        - name: SL_ROOT
+          value: ""
+        - name: SL_USE_LOCAL_FILE_SYSTEM
+          value: "false"
+        - name: SL_API_GIT_COMMAND_ROOT
+          value: /git
+        - name: SL_API_SECURE
+          value: "false"
+        - name: SL_API
+          value: "true"
+        - name: SL_API_SESSION_AS_HEADER
+          value: "true"
+        - name: SL_API_HTTP_FRONT_URL
+          {{- if .Values.ui.frontendUrl }}
+          value: {{ .Values.ui.frontendUrl | quote }}
+          {{- else }}
+          value: {{ include "starlake.frontendUrl" . | quote }}
+          {{- end }}
+        - name: SL_API_HTTP_INTERFACE
+          value: 0.0.0.0
+        - name: SL_API_HTTP_PORT
+          value: "9900"
+        - name: SL_LOG_LEVEL
+          value: {{ .Values.ui.logLevel | quote }}
+        - name: SL_API_JDBC_DRIVER
+          value: org.postgresql.Driver
+        - name: SL_API_JDBC_USER
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "starlake.postgresql.secretName" . }}
+              key: {{ include "starlake.postgresql.usernameKey" . }}
+        - name: SL_API_JDBC_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "starlake.postgresql.secretName" . }}
+              key: {{ include "starlake.postgresql.passwordKey" . }}
+        - name: SL_API_JDBC_URL
+          value: {{ include "starlake.postgresql.jdbcUrl" . }}&password=$(SL_API_JDBC_PASSWORD)
+        - name: SL_API_DOMAIN
+          value: {{ include "starlake.domain" . | quote }}
+        - name: SL_API_PROJECT_ROOT
+          value: /projects
+        {{- if .Values.airflow.enabled }}
+        - name: SL_API_ORCHESTRATOR_PRIVATE_URL
+          value: http://{{ include "starlake.fullname" . }}-airflow:8080/airflow/
+        - name: LOAD_DAG_REF
+          value: airflow_load_shell
+        - name: TRANSFORM_DAG_REF
+          value: airflow_transform_shell
+        - name: SL_API_AIRFLOW_VERSION
+          value: {{ .Values.airflow.version | quote }}
+        - name: SL_API_AIRFLOW_USERNAME
+          value: {{ .Values.airflow.admin.username | quote }}
+        - name: SL_API_AIRFLOW_PASSWORD
+          value: {{ .Values.airflow.admin.password | quote }}
+        {{- end }}
+        - name: SL_API_AI_URL
+          value: http://{{ include "starlake.fullname" . }}-agent:8000
+        - name: SL_AI_APPLICATION_KEY
+          value: {{ .Values.agent.applicationKey | quote }}
+        # Gizmo URL - always defined like in docker-compose
+        - name: SL_API_GIZMO_ON_DEMAND_URL
+          value: http://{{ include "starlake.fullname" . }}-gizmo:10900
+        - name: ENVIRONMENT
+          value: local
+        - name: FILESTORE_MNT_DIR
+          value: /projects
+        - name: EXTERNAL_PROJECTS_MNT_DIR
+          value: /external_projects
+        - name: POSTGRES_HOST
+          value: {{ include "starlake.postgresql.host" . | quote }}
+        - name: POSTGRES_DB
+          value: {{ include "starlake.postgresql.starlakeDatabase" . | quote }}
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "starlake.postgresql.secretName" . }}
+              key: {{ include "starlake.postgresql.usernameKey" . }}
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "starlake.postgresql.secretName" . }}
+              key: {{ include "starlake.postgresql.passwordKey" . }}
+        - name: SL_UI_DEMO
+          # Enable demo mode if either ui.demo or demo.enabled is true
+          # When true, UI will auto-initialize demo projects with DuckLake setup
+          value: {{ or .Values.ui.demo .Values.demo.enabled | quote }}
+        - name: SL_API_APP_TYPE
+          value: {{ .Values.ui.appType | quote }}
+        {{- if .Values.ui.mail.enabled }}
+        - name: SL_API_MAIL_HOST
+          value: {{ .Values.ui.mail.host | quote }}
+        - name: SL_API_MAIL_PORT
+          value: {{ .Values.ui.mail.port | quote }}
+        - name: SL_API_MAIL_USER
+          value: {{ .Values.ui.mail.user | quote }}
+        - name: SL_API_MAIL_PASSWORD
+          value: {{ .Values.ui.mail.password | quote }}
+        - name: SL_API_MAIL_FROM
+          value: {{ .Values.ui.mail.from | quote }}
+        {{- end }}
+        - name: SL_API_MAX_USER_SPACE_MB
+          value: {{ .Values.ui.fileUpload.maxUserSpaceMB | quote }}
+        - name: SL_API_FILE_UPLOAD_MAX_CONTENT_LENGTH
+          value: {{ .Values.ui.fileUpload.maxContentLength | quote }}
+        - name: SL_API_UI_FOLDER
+          value: /app/ui
+        - name: SL_API_DOCS_USERS
+          value: starlake
+        - name: SL_API_DOCS_USER
+          value: starlake
+        - name: SL_API_DOCS_PASSWORD
+          value: s3cret.Paw
+        {{- with .Values.ui.env }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        # Startup probe - allows slow startup (JVM + init can take 1-2 min)
+        # Matches docker-compose: interval=5s, retries=60 = 5 min max
+        startupProbe:
+          httpGet:
+            path: /api/v1/health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 60
+        # Liveness probe - after startup succeeds
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: http
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+        # Readiness probe
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: http
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          {{- toYaml .Values.ui.resources | nindent 10 }}
+        volumeMounts:
+        - name: starlake-cli
+          mountPath: /usr/local/bin/starlake
+          subPath: starlake.sh
+        - name: projects
+          mountPath: /projects
+        {{- if .Values.persistence.externalProjects.enabled }}
+        - name: external-projects
+          mountPath: /external_projects
+        {{- end }}
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: starlake-cli
+        configMap:
+          name: {{ include "starlake.fullname" . }}-scripts
+          defaultMode: 0755
+      - name: projects
+        persistentVolumeClaim:
+          claimName: {{ include "starlake.fullname" . }}-projects
+      {{- if .Values.persistence.externalProjects.enabled }}
+      - name: external-projects
+        persistentVolumeClaim:
+          claimName: {{ include "starlake.fullname" . }}-external-projects
+      {{- end }}
+      - name: tmp
+        emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
