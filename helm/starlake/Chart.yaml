@@ -1,0 +1,19 @@
+apiVersion: v2
+name: starlake
+description: Starlake Data Stack - A Helm chart for deploying Starlake with Airflow orchestrator on Kubernetes
+type: application
+version: 1.0.0
+appVersion: "1.5"
+icon: https://docs.starlake.ai/img/starlake-logo.png
+keywords:
+  - starlake
+  - airflow
+  - data
+  - etl
+  - orchestration
+home: https://github.com/starlake-ai/starlake-data-stack
+sources:
+  - https://github.com/starlake-ai/starlake-data-stack
+maintainers:
+  - name: Starlake Team
+    email: contact@starlake.ai

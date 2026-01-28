@@ -1,0 +1,81 @@
+# Example: Development/Local Deployment
+# Usage: helm install starlake ./helm/starlake -f values-development.yaml
+
+# Use internal PostgreSQL (simpler for dev)
+postgresql:
+  external:
+    enabled: false
+  internal:
+    enabled: true
+    persistence:
+      enabled: true
+      size: 10Gi  # Smaller for dev
+      storageClass: "standard"
+  credentials:
+    username: dbuser
+    password: dbuser123
+
+# Smaller resources for development
+ui:
+  replicas: 1
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+
+airflow:
+  webserver:
+    replicas: 1
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "2Gi"
+        cpu: "1000m"
+  scheduler:
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "2Gi"
+        cpu: "1000m"
+  admin:
+    username: airflow
+    password: airflow
+
+agent:
+  replicas: 1
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+# Smaller projects volume
+persistence:
+  projects:
+    enabled: true
+    size: 20Gi
+    storageClass: "nfs-client"  # Adjust for your local setup
+
+# Use LoadBalancer or port-forward
+proxy:
+  service:
+    type: NodePort  # Or LoadBalancer if available
+
+ingress:
+  enabled: false
+
+# Disable optional services to save resources
+gizmo:
+  enabled: false
+
+minio:
+  enabled: false

@@ -1,0 +1,122 @@
+🚀 Starlake Data Stack has been deployed!
+
+{{ if .Values.postgresql.internal.enabled -}}
+✅ PostgreSQL: Internal (StatefulSet)
+{{- else -}}
+✅ PostgreSQL: External ({{ .Values.postgresql.external.host }})
+{{- end }}
+
+✅ Starlake UI: Enabled
+{{ if .Values.airflow.enabled -}}
+✅ Airflow: Enabled (version {{ .Values.airflow.version }})
+{{- end }}
+{{ if .Values.agent.enabled -}}
+✅ Starlake Agent: Enabled
+{{- end }}
+{{ if .Values.gizmo.enabled -}}
+✅ Gizmo: Enabled
+{{- end }}
+{{ if .Values.minio.enabled -}}
+✅ MinIO: Enabled
+{{- end }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📋 Access Information:
+
+{{ if .Values.ingress.enabled -}}
+🌐 Ingress URL: {{ if .Values.ingress.tls.enabled }}https{{ else }}http{{ end }}://{{ .Values.ingress.host }}
+
+  - Starlake UI:  {{ if .Values.ingress.tls.enabled }}https{{ else }}http{{ end }}://{{ .Values.ingress.host }}{{ .Values.ingress.paths.ui }}
+  {{- if .Values.airflow.enabled }}
+  - Airflow:      {{ if .Values.ingress.tls.enabled }}https{{ else }}http{{ end }}://{{ .Values.ingress.host }}{{ .Values.ingress.paths.airflow }}
+  {{- end }}
+  {{- if .Values.agent.enabled }}
+  - Agent:        {{ if .Values.ingress.tls.enabled }}https{{ else }}http{{ end }}://{{ .Values.ingress.host }}{{ .Values.ingress.paths.agent }}
+  {{- end }}
+{{- else if eq .Values.ui.service.type "LoadBalancer" }}
+⏳ Waiting for LoadBalancer IP...
+
+Run this command to get the external IP:
+  kubectl get svc {{ include "starlake.fullname" . }}-ui -n {{ .Release.Namespace }}
+
+Once ready, access Starlake at:
+  http://<EXTERNAL-IP>:{{ .Values.ui.service.port }}
+{{- else if eq .Values.ui.service.type "NodePort" }}
+🔗 NodePort Service:
+
+Get the NodePort:
+  export NODE_PORT=$(kubectl get svc {{ include "starlake.fullname" . }}-ui -n {{ .Release.Namespace }} -o jsonpath='{.spec.ports[0].nodePort}')
+  export NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="ExternalIP")].address}')
+  echo "http://$NODE_IP:$NODE_PORT"
+{{- else }}
+🔗 Port-forward to access locally:
+
+  kubectl port-forward svc/{{ include "starlake.fullname" . }}-ui 8080:{{ .Values.ui.service.port }} -n {{ .Release.Namespace }}
+
+Then open:
+  - Starlake UI:  http://localhost:8080
+  {{- if .Values.airflow.enabled }}
+  - Airflow:      http://localhost:8080/airflow (via UI proxy)
+  {{- end }}
+
+Note: UI acts as reverse proxy for Airflow. Single port-forward for both services.
+{{- end }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{{ if .Values.airflow.enabled -}}
+🔐 Airflow Credentials:
+  Username: {{ .Values.airflow.admin.username }}
+  Password: {{ .Values.airflow.admin.password }}
+{{- end }}
+
+{{ if .Values.postgresql.internal.enabled -}}
+📊 PostgreSQL Credentials:
+  Username: {{ .Values.postgresql.credentials.username }}
+  Password: {{ .Values.postgresql.credentials.password }}
+
+  Connect from within cluster:
+    Host: {{ include "starlake.fullname" . }}-postgresql
+    Port: 5432
+    Database: {{ .Values.postgresql.external.starlakeDatabase }}
+{{- end }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📚 Useful Commands:
+
+# View all resources
+kubectl get all -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+# View logs for specific components
+kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/component=ui -f
+kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/component=airflow -f
+
+# Check PostgreSQL status
+{{ if .Values.postgresql.internal.enabled -}}
+kubectl get statefulset {{ include "starlake.fullname" . }}-postgresql -n {{ .Release.Namespace }}
+{{- end }}
+
+# Access PostgreSQL shell
+{{ if .Values.postgresql.internal.enabled -}}
+kubectl exec -it {{ include "starlake.fullname" . }}-postgresql-0 -n {{ .Release.Namespace }} -- psql -U {{ .Values.postgresql.credentials.username }} -d {{ .Values.postgresql.external.starlakeDatabase }}
+{{- end }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+⚠️  Important Notes:
+
+{{ if not .Values.postgresql.external.enabled -}}
+1. PostgreSQL data is persisted in a PVC. To reset, delete the PVC:
+   kubectl delete pvc data-{{ include "starlake.fullname" . }}-postgresql-0 -n {{ .Release.Namespace }}
+{{- end }}
+
+2. Projects are stored in PVC: {{ include "starlake.fullname" . }}-projects
+   Ensure your cluster supports ReadWriteMany access mode (e.g., NFS, EFS)
+
+3. For production deployments, update default passwords in values.yaml or use existing secrets
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+For more information, visit: https://github.com/starlake-ai/starlake-data-stack

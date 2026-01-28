@@ -1,0 +1,64 @@
+# Example: Using External PostgreSQL (RDS, CloudSQL, etc.)
+# Usage: helm install starlake ./helm/starlake -f values-external-postgres.yaml
+
+postgresql:
+  # Use external PostgreSQL
+  external:
+    enabled: true
+    host: "my-postgres.example.com"  # CHANGE THIS
+    port: 5432
+    starlakeDatabase: starlake
+    airflowDatabase: airflow
+
+  # Disable internal PostgreSQL
+  internal:
+    enabled: false
+
+  # Credentials (use existing secret in production!)
+  credentials:
+    username: starlake_user
+    password: "ChangeThisPassword123!"
+    # For production, use:
+    # existingSecret: "my-postgres-secret"
+    # usernameKey: "username"
+    # passwordKey: "password"
+
+# Adjust storage class for your cloud provider
+persistence:
+  projects:
+    enabled: true
+    storageClass: ""  # Leave empty to use default, or specify: "efs-sc", "filestore-csi", "azurefile"
+    size: 100Gi
+
+# Disable proxy LoadBalancer if using Ingress
+proxy:
+  service:
+    type: ClusterIP
+
+# Enable Ingress
+ingress:
+  enabled: true
+  className: nginx
+  host: starlake.mycompany.com
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  tls:
+    enabled: true
+    secretName: starlake-tls
+
+# Production settings
+ui:
+  replicas: 2
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "1000m"
+    limits:
+      memory: "8Gi"
+      cpu: "4000m"
+
+airflow:
+  webserver:
+    replicas: 2
+  admin:
+    password: "ChangeThisAirflowPassword!"

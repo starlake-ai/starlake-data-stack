@@ -1,0 +1,379 @@
+# Starlake Helm Chart Values
+# This is the default configuration for the Starlake Data Stack with Airflow
+
+# Global settings
+global:
+  # Storage class to use for all PVCs (override per component if needed)
+  storageClass: ""
+
+# PostgreSQL Database Configuration
+postgresql:
+  # Use external PostgreSQL database (managed service like RDS, CloudSQL, etc.)
+  external:
+    enabled: false
+    host: ""  # e.g., "my-postgres.abc123.us-east-1.rds.amazonaws.com"
+    port: 5432
+    # Databases names (will be created if using internal postgres)
+    starlakeDatabase: starlake
+    airflowDatabase: airflow
+
+  # Deploy PostgreSQL as a StatefulSet in the cluster
+  internal:
+    enabled: true
+    image:
+      repository: postgres
+      tag: "17"
+      pullPolicy: IfNotPresent
+
+    # Resources
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "500m"
+      limits:
+        memory: "2Gi"
+        cpu: "2000m"
+
+    # Persistence
+    persistence:
+      enabled: true
+      storageClass: ""  # Use global.storageClass if empty
+      size: 50Gi
+      # existingClaim: ""  # Use existing PVC instead of creating new one
+
+    # PostgreSQL configuration
+    config:
+      maxConnections: 200
+      sharedBuffers: "256MB"
+
+  # Credentials (used for both external and internal)
+  # WARNING: Override these in production with secure values!
+  credentials:
+    username: dbuser
+    password: dbuser123
+    # Existing secret to use instead of creating one
+    # existingSecret: ""
+    # Keys in the existing secret
+    # usernameKey: "postgres-user"
+    # passwordKey: "postgres-password"
+
+# Starlake UI Configuration
+ui:
+  enabled: true
+
+  image:
+    repository: starlakeai/starlake-1.5-ui
+    tag: "1.5"
+    pullPolicy: Always
+
+  replicas: 1
+
+  # Application type: "ducklake" for DuckDB, "web" for cloud data warehouses
+  appType: ducklake
+
+  # Resources
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "4Gi"
+      cpu: "2000m"
+
+  # Service configuration
+  # UI is now the main entry point (proxy merged into UI in docker-compose)
+  service:
+    type: LoadBalancer  # Change to NodePort or ClusterIP if using Ingress
+    port: 80            # External port (maps to internal 9900)
+    targetPort: 9900    # Internal container port
+
+  # Environment variables (additional custom env vars)
+  env: []
+  # - name: CUSTOM_VAR
+  #   value: "custom_value"
+
+  # Demo mode
+  demo: false
+
+  # Log level: debug, info, warn, error
+  logLevel: info
+
+  # Mail configuration (optional)
+  mail:
+    enabled: false
+    host: smtp.sendgrid.net
+    port: 587
+    user: apikey
+    password: ""
+    from: contact@starlake.ai
+
+  # File upload configuration
+  fileUpload:
+    maxContentLength: 21474836480  # 20 GB
+    maxUserSpaceMB: 0  # 0 = unlimited
+
+  # Frontend URL override for port-forward scenarios
+  # If empty, uses auto-detected URL based on ingress/service config
+  # For local testing with port-forward on port 8088, set to "http://localhost:8088"
+  frontendUrl: ""
+
+# Airflow Configuration
+airflow:
+  enabled: true
+
+  # Airflow version (2 or 3)
+  version: 2
+
+  image:
+    # Using official Apache Airflow image
+    # For local custom image (built from Dockerfile_airflow), use:
+    #   repository: starlake-airflow
+    #   tag: local
+    #   pullPolicy: Never
+    repository: apache/airflow
+    tag: "2.10.4-python3.11"
+    pullPolicy: IfNotPresent
+
+  # Install Python packages at startup (starlake-airflow, providers, etc.)
+  # Set to false if using a custom image that already has packages installed
+  # (e.g., image built from Dockerfile_airflow)
+  installPythonPackages: true
+
+  # Admin user credentials
+  admin:
+    username: airflow
+    password: airflow
+    firstname: Airflow
+    lastname: Admin
+    email: admin@example.com
+
+  # Webserver configuration
+  webserver:
+    replicas: 1
+    resources:
+      requests:
+        memory: "1Gi"
+        cpu: "500m"
+      limits:
+        memory: "4Gi"
+        cpu: "2000m"
+    service:
+      type: ClusterIP
+      port: 8080
+
+  # Scheduler configuration (combined with webserver in Airflow 2)
+  scheduler:
+    resources:
+      requests:
+        memory: "1Gi"
+        cpu: "500m"
+      limits:
+        memory: "4Gi"
+        cpu: "2000m"
+
+  # Executor type
+  executor: LocalExecutor
+
+  # Log level
+  logLevel: INFO
+
+  # DAG processing interval
+  dagDirListInterval: 30
+  dagMinFileProcessInterval: 5
+
+  # Base URL for Airflow webserver (used for redirects)
+  # If empty, uses frontendUrl/airflow (e.g., http://localhost:80/airflow)
+  # For local testing with port-forward, set to "http://localhost:8080/airflow"
+  baseUrl: ""
+
+  # Logs persistence
+  logs:
+    persistence:
+      enabled: true
+      storageClass: ""
+      size: 20Gi
+
+# Starlake Agent (AI Assistant)
+agent:
+  enabled: true
+
+  image:
+    repository: starlakeai/starlake-1.5-ask
+    tag: "0.1"
+    pullPolicy: Always
+
+  replicas: 1
+
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+
+  service:
+    type: ClusterIP
+    port: 8000
+
+  # Application key for API authentication
+  applicationKey: Starlake7157
+
+# Gizmo (Optional - SQL on-demand service)
+gizmo:
+  enabled: false
+
+  image:
+    repository: starlakeai/gizmo-on-demand
+    tag: snapshot-slim
+    pullPolicy: Always
+
+  replicas: 1
+
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+
+  service:
+    type: ClusterIP
+    port: 10900
+
+  # Port range for Gizmo processes
+  minPort: 11900
+  maxPort: 12000
+  maxProcesses: 10
+
+  # Credentials
+  apiKey: a_secret_api_key
+  sql:
+    username: gizmosql_user
+    password: gizmosql_password
+  jwt:
+    secretKey: a_very_secret_key
+
+# MinIO (Optional - Object storage)
+minio:
+  enabled: false
+
+  image:
+    repository: quay.io/minio/minio
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  replicas: 1
+
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+
+  service:
+    type: ClusterIP
+    apiPort: 9000
+    consolePort: 9001
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 100Gi
+
+  # Credentials
+  rootUser: minio
+  rootPassword: minio123
+
+  # Buckets to create
+  buckets:
+    - ducklake-files
+    - warehouse
+
+# Persistence for shared volumes
+persistence:
+  # Projects directory (shared between UI, Airflow, etc.)
+  projects:
+    enabled: true
+    storageClass: ""  # Must support ReadWriteMany (e.g., NFS, EFS, Azure Files)
+    size: 100Gi
+    # existingClaim: ""  # Use existing PVC
+
+  # External projects directory (optional)
+  externalProjects:
+    enabled: false
+    storageClass: ""
+    size: 50Gi
+
+# Ingress configuration (alternative to proxy service)
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+    # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+
+  host: starlake.example.com
+
+  tls:
+    enabled: false
+    secretName: starlake-tls
+
+  # Path-based routing (similar to Docker Compose proxy)
+  paths:
+    ui: /
+    airflow: /airflow
+    agent: /agent
+    gizmo: /gizmo
+
+# Demo Projects Initialization
+# When enabled, the UI will automatically initialize demo projects from bundled ZIPs
+# This sets SL_UI_DEMO=true which triggers the UI's internal ProjectService to:
+# - Extract demo ZIPs from /app/demo/
+# - Create PostgreSQL databases for DuckLake
+# - Create DuckDB persistent secrets
+# - Initialize project structure
+demo:
+  enabled: false  # Set to true to initialize demo projects on install
+
+# Service Account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+  # Annotations for cloud IAM (e.g., AWS IRSA, GCP Workload Identity)
+  # annotations:
+  #   eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/ROLE_NAME
+
+# Pod Security Context
+podSecurityContext:
+  fsGroup: 1000
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# Security Context
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Network Policy
+networkPolicy:
+  enabled: false
+  policyTypes:
+    - Ingress
+    - Egress

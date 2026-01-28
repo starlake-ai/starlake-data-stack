@@ -1,0 +1,64 @@
+{{- if .Values.persistence.projects.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "starlake.fullname" . }}-projects
+  labels:
+    {{- include "starlake.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage
+spec:
+  accessModes:
+    {{- $storageClass := include "starlake.storageClass" (dict "storageClass" .Values.persistence.projects.storageClass "context" .) }}
+    {{- if eq $storageClass "local-path" }}
+    - ReadWriteOnce  # local-path only supports RWO (for K3s testing)
+    {{- else }}
+    - ReadWriteMany  # Required for sharing between UI, Airflow, etc.
+    {{- end }}
+  {{- with $storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.projects.size }}
+{{- end }}
+
+{{- if .Values.persistence.externalProjects.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "starlake.fullname" . }}-external-projects
+  labels:
+    {{- include "starlake.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage
+spec:
+  accessModes:
+    - ReadWriteMany
+  {{- with (include "starlake.storageClass" (dict "storageClass" .Values.persistence.externalProjects.storageClass "context" .)) }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.externalProjects.size }}
+{{- end }}
+
+{{- if and .Values.airflow.enabled .Values.airflow.logs.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "starlake.fullname" . }}-airflow-logs
+  labels:
+    {{- include "starlake.labels" . | nindent 4 }}
+    app.kubernetes.io/component: airflow
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- with (include "starlake.storageClass" (dict "storageClass" .Values.airflow.logs.persistence.storageClass "context" .)) }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.airflow.logs.persistence.size }}
+{{- end }}
