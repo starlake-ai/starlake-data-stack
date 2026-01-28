@@ -1,0 +1,77 @@
+# Dockerfile for Airflow on Kubernetes (without Docker socket dependency)
+# Use this instead of Dockerfile_airflow for Kubernetes deployments
+
+# Stage 1: Copy Starlake CLI from UI image
+FROM starlakeai/starlake-1.5-ui:1.5 AS starlake-cli
+
+# Stage 2: Build Airflow image with Starlake CLI
+FROM apache/airflow:2.11.0
+
+# Switch to root user to install additional packages
+USER root
+
+# Install NFS client utilities (no docker-ce-cli needed in K8s)
+RUN apt-get update \
+    && apt-get install -y nfs-common \
+    mandoc \
+    less \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+ADD conf/airflow/webserver_config.py /opt/airflow/webserver_config.py
+
+# Required to mount NFS volumes
+RUN echo "airflow ALL=(ALL:ALL) NOPASSWD: ALL"  > /etc/sudoers.d/airflow
+
+# Copy the actual Starlake CLI (Java) from UI image
+COPY --from=starlake-cli /app/starlake /app/starlake
+
+# Install SL CLI wrapper for Kubernetes (shell mode, no docker exec)
+# This wrapper handles --options parsing, sets JAVA_HOME, and calls the actual starlake.sh
+# IMPORTANT: We rename the original starlake to starlake-original and replace it with our wrapper
+# because Airflow DAGs call /app/starlake/starlake directly (not /usr/local/bin/starlake)
+RUN mv /app/starlake/starlake /app/starlake/starlake-original 2>/dev/null || true
+COPY scripts/kubernetes/starlake.sh /app/starlake/starlake
+RUN chmod +x /app/starlake/starlake \
+    && chmod +x /app/starlake/starlake.sh \
+    && chmod +x /app/starlake/starlake-original 2>/dev/null || true \
+    && ln -sf /app/starlake/starlake /usr/local/bin/starlake
+
+# Copy Java runtime from UI image (required for starlake CLI)
+COPY --from=starlake-cli /opt/java /opt/java
+ENV JAVA_HOME=/opt/java/openjdk
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+# Make JAVA_HOME available in all subshells (for Airflow BashOperator/subprocess)
+RUN echo "export JAVA_HOME=/opt/java/openjdk" >> /etc/bash.bashrc \
+    && echo "export PATH=\$JAVA_HOME/bin:\$PATH" >> /etc/bash.bashrc \
+    && echo "export JAVA_HOME=/opt/java/openjdk" >> /etc/profile.d/java.sh \
+    && echo "export PATH=\$JAVA_HOME/bin:\$PATH" >> /etc/profile.d/java.sh \
+    && chmod +x /etc/profile.d/java.sh
+
+# Install gcloud sdk
+RUN curl https://dl.google.com/dl/cloudsdk/release/google-cloud-sdk.tar.gz > /tmp/google-cloud-sdk.tar.gz \
+    && mkdir -p /usr/local/gcloud \
+    && tar -C /usr/local/gcloud -xvf /tmp/google-cloud-sdk.tar.gz \
+    && ln -s /usr/local/gcloud/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud \
+    && rm /tmp/google-cloud-sdk.tar.gz
+
+# Switch back to the airflow user
+USER airflow
+
+# Install aws cli
+RUN pip install --no-cache-dir -U awscli
+
+# Configure aws cli
+RUN mkdir -p /home/airflow/.aws
+COPY conf/aws/credentials /home/airflow/.aws/credentials
+COPY conf/aws/config /home/airflow/.aws/config
+
+# Install airflow amazon and google providers
+RUN pip install --no-cache-dir \
+    apache-airflow-providers-amazon \
+    apache-airflow-providers-google
+
+# Install SL Python libraries (no docker package needed in K8s)
+RUN pip install --no-cache-dir \
+    starlake-airflow~=0.4 --upgrade
