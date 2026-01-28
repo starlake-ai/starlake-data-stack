@@ -1,37 +1,6 @@
 name: starlake
 
-x-airflow-common:
-  &airflow-common
-  build:
-    &airflow-common-build
-    context: .  # Assuming Dockerfile_airflow is in the current directory
-  restart: on-failure
-  depends_on:
-    &airflow-common-depends-on
-    starlake-db:
-      condition: service_healthy
-  networks:
-    &airflow-common-networks
-    - starlake-network
-  environment:
-    &airflow-common-env
-    AIRFLOW__CORE__EXECUTOR: LocalExecutor
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${SL_POSTGRES_USER:-dbuser}:${SL_POSTGRES_PASSWORD:-dbuser123}@starlake-db:5432/${AIRFLOW_DB:-airflow}
-    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-    SL_HOME: /app/starlake
 
-x-starlake-airflow:
-  &starlake-airflow
-  <<: *airflow-common
-  container_name: starlake-airflow
-  ports:
-      - "8080:8080"  # starlake-airflow default port
-  volumes:
-      - /var/run/docker.sock:/var/run/docker.sock  # Mount Docker socket to run Docker commands from the container
-      - ${PROJECTS_DATA_PATH:-./projects}:/projects
-      - ${PROJECTS_DATA_PATH:-./projects}/dags:/opt/airflow/dags
-      - ${AIRFLOW_LOGS:-./airflow/logs}:/opt/airflow/logs
-      - /Users/hayssams/.config:/home/airflow/.config
 
 x-starlake-ui-common:
   &starlake-ui-common
@@ -131,7 +100,6 @@ services:
 # Database service
   starlake-db:
     profiles:
-      - airflow
       - airflow3
       - dagster
       - snowflake
@@ -163,13 +131,26 @@ services:
   starlake-airflow3:
     profiles:
       - airflow3
-    <<: *starlake-airflow
+    container_name: starlake-airflow
+    restart: on-failure
     image: starlakeai/starlake-airflow3:latest
     build:
-      <<: *airflow-common-build
+      context: .  # Assuming Dockerfile_airflow is in the current directory
       dockerfile: Dockerfile_airflow3
     depends_on:
-      <<: *airflow-common-depends-on
+      starlake-db:
+        condition: service_healthy
+    networks:
+      - starlake-network
+    ports:
+      - "8080:8080"  # starlake-airflow default port
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock  # Mount Docker socket to run Docker commands from the container
+      - ${PROJECTS_DATA_PATH:-./projects}:/projects
+      - ${PROJECTS_DATA_PATH:-./projects}/dags:/opt/airflow/dags
+      - ${AIRFLOW_LOGS:-./airflow/logs}:/opt/airflow/logs
+      - /Users/hayssams/.config:/home/airflow/.config
+      - ./scripts/airflow/run-airflow3.sh:/app/run-airflow3.sh
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://starlake-airflow:8080/airflow/api/v2/version"]
       interval: 30s
@@ -177,7 +158,10 @@ services:
       retries: 5
       start_period: 60s
     environment:
-      <<: *airflow-common-env
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${SL_POSTGRES_USER:-dbuser}:${SL_POSTGRES_PASSWORD:-dbuser123}@starlake-db:5432/${AIRFLOW_DB:-airflow}
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      SL_HOME: /app/starlake
       AIRFLOW__API__SECRET_KEY: ${AIRFLOW__API__SECRET_KEY:-a_very_secret_key}
       AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET:-a_very_secret_key}
       AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'true'
@@ -192,17 +176,7 @@ services:
       AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL: ${AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL:-30}
       AIRFLOW__FAB__AUTH_BACKENDS: airflow.providers.fab.auth_manager.api.auth.backend.session,airflow.providers.fab.auth_manager.api.auth.backend.basic_auth
       AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
-    entrypoint: >
-      /bin/bash -c "
-      sleep 10 &&
-      airflow db migrate && 
-      airflow users create --username ${AIRFLOW_USERNAME:-airflow} --firstname ${AIRFLOW_FIRSTNAME:-airflow} --lastname ${AIRFLOW_LASTNAME:-airflow} --role Admin --email ${AIRFLOW_EMAIL:-admin@example.com} --password ${AIRFLOW_PASSWORD:-airflow} &&
-      pip install --no-cache-dir starlake-airflow docker --upgrade --force-reinstall &&
-      airflow api-server &
-      airflow scheduler &
-      exec airflow dag-processor &
-      wait -n;
-      exit $?"
+    entrypoint: /app/run-airflow3.sh
 
   starlake-ui-airflow3:
     profiles:

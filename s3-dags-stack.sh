@@ -1,1 +1,1 @@
-SL_API_APP_TYPE=ducklake docker compose --profile airflow --profile minio --profile gizmo up  --build
+SL_API_APP_TYPE=ducklake docker compose --profile airflow3 --profile minio --profile gizmo up  --build
