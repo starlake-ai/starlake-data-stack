@@ -13,13 +13,13 @@ Starlake provides prebuilt data stacks that can be run with a single command. Th
 
 ![Pragmatic Open Data Stack](images/pragmatic-open-data-stack.png)
 
-The Pragmatic Open Data Stack is a ready-to-use data stack that includes Starlake with Airflow, DuckLake, Minio (optional)and Gizmo.
+The Pragmatic Open Data Stack is a ready-to-use data stack that includes Starlake with Airflow 3, DuckLake, Minio (optional)and Gizmo.
 
 ### Pragmatic BigQuery Data Stack
 
 ![Pragmatic BigQuery Data Stack](images/pragmatic-bigquery-data-stack.png)
 
-The Pragmatic BigQuery Data Stack is a ready-to-use data stack that includes Starlake with Airflow .
+The Pragmatic BigQuery Data Stack is a ready-to-use data stack that includes Starlake with Airflow 3.
 
 ### Pragmatic Snowflake Data Stack
 
@@ -31,7 +31,7 @@ The Pragmatic Snowflake Data Stack is a ready-to-use data stack that includes St
 
 ![Pragmatic Redshift Data Stack](images/pragmatic-redshift-data-stack.png)
 
-The Pragmatic W Redshift Data Stack is a ready-to-use data stack that includes Starlake with Airflow.
+The Pragmatic W Redshift Data Stack is a ready-to-use data stack that includes Starlake with Airflow 3.
 
 ## Quick Start
 
@@ -50,10 +50,10 @@ git clone https://github.com/starlake-ai/starlake-data-stack.git
 cd starlake-data-stack
 ```
 
-3. Run the following command to start Starlake UI with Airflow and Gizmo on Docker
+3. Run the following command to start Starlake UI with Airflow 3 and Gizmo on Docker
 
 ```bash
-COMPOSE_PROFILES=airflow,gizmo SL_API_APP_TYPE=ducklake docker compose up  --build
+COMPOSE_PROFILES=airflow3,gizmo SL_API_APP_TYPE=ducklake docker compose up  --build
 ```
 
 4. Open your browser and navigate to `http://localhost` to access Starlake UI
@@ -75,23 +75,23 @@ See the `docker-compose.yml` file for a full list of variables and their default
 
 ## Running Starlake
 
-Starlake uses Docker Compose **profiles** to manage different configurations (e.g., Airflow 2 vs Airflow 3, Dagster). You must specify a profile when running commands.
+Starlake uses Docker Compose **profiles** to manage different configurations (e.g., Airflow 3, Dagster). You must specify a profile when running commands.
 
 ### Available Profiles
 
-- **`airflow`**: Runs Starlake with Airflow 2.
-- **`airflow3`**: Runs Starlake with Airflow 3 (experimental).
+- **`airflow3`**: Runs Starlake with Airflow 3.
 - **`dagster`**: Runs Starlake with Dagster (requires `docker-compose-dagster.yml` if running separately, but defined in main compose for some services).
 - **`gizmo`**: Runs the Starlake Gizmo service.
 - **`minio`**: Runs MinIO Object Storage.
 - **`snowflake`**: Profile for Snowflake integration.
+- **`ai`**: Runs the Starlake AI Agent service and enables the AI features in Starlake UI.
 
 ### Start Services
 
-To start the Pragmatic Duck Data Stack with Airflow and Gizmo on local file system, use the following command:
+To start the Pragmatic Duck Data Stack with Airflow 3 and Gizmo on local file system, use the following command:
 
 ```bash
-COMPOSE_PROFILES=airflow,gizmo SL_API_APP_TYPE=ducklake docker compose up  --build
+COMPOSE_PROFILES=airflow3,gizmo SL_API_APP_TYPE=ducklake docker compose up  --build
 ```
 
 or simply
@@ -100,19 +100,13 @@ or simply
 $ ./dags-stack.sh
 ```
 
-To start the Pragmatic Duck Data Stack with Airflow & Minio and Gizmo, use the following command:
+To start the Pragmatic Duck Data Stack with Airflow 3 & Minio and Gizmo, use the following command:
 
 ```bash
-COMPOSE_PROFILES=airflow,minio,gizmo SL_API_APP_TYPE=ducklake docker compose up  --build
+COMPOSE_PROFILES=airflow3,minio,gizmo SL_API_APP_TYPE=ducklake docker compose up  --build
 ```
 
-To start the stack with a specific profile (e.g., `airflow`) and address any Cloud Datawarehouses, use the following commands:
-
-```bash
-COMPOSE_PROFILES=airflow docker compose up  --build
-```
-
-To run with Airflow 3 (experimental), use the following command:
+To start the stack with a specific profile (e.g., `airflow3`) and address any Cloud Datawarehouses, use the following commands:
 
 ```bash
 COMPOSE_PROFILES=airflow3 docker compose up  --build
@@ -129,7 +123,7 @@ COMPOSE_PROFILES=dagster docker compose up  --build
 To stop the services:
 
 ```bash
-COMPOSE_PROFILES=airflow,gizmo,minio SL_API_APP_TYPE=ducklake docker compose down
+COMPOSE_PROFILES=airflow3,gizmo,minio SL_API_APP_TYPE=ducklake docker compose down
 ```
 
 _Note: You must specify the same profiles used to start the services to ensure they are all stopped correctly._
@@ -144,12 +138,12 @@ Once up, the services are accessible at the following default URLs:
 
 - **Check Logs**:
   ```bash
-  docker compose --profile airflow logs -f
+  docker compose --profile airflow3 logs -f
   ```
 - **Rebuild Images**:
   If you need to update the images or changes in Dockerfiles:
   ```bash
-  docker compose --profile airflow build
+  docker compose --profile airflow3 build
   ```
 - **Database Persistence**:
   Postgres data is persisted in the `pgdata` volume. To reset the database, you may need to remove this volume:

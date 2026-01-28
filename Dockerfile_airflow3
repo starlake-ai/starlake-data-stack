@@ -1,4 +1,5 @@
-# Use the official Apache Airflow image as the base
+# Use the official Apache Airflow image as the base 
+# but do not upgrade to airflow 3.1.4+ until the basic auth bug has been solved
 FROM apache/airflow:3.1.3
 #2.11.0
 
@@ -13,9 +14,6 @@ RUN apt-get update \
     less \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-
-# ADD conf/airflow/webserver_config.py /opt/airflow/webserver_config.py
-# ADD conf/airflow/airflow.cfg /opt/airflow/airflow.cfg
 
 # Required to mount NFS volumes
 RUN echo "airflow ALL=(ALL:ALL) NOPASSWD: ALL"  > /etc/sudoers.d/airflow

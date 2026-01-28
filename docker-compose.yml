@@ -25,7 +25,7 @@ x-starlake-airflow:
   <<: *airflow-common
   container_name: starlake-airflow
   ports:
-      - 8080  # starlake-airflow default port
+      - "8080:8080"  # starlake-airflow default port
   volumes:
       - /var/run/docker.sock:/var/run/docker.sock  # Mount Docker socket to run Docker commands from the container
       - ${PROJECTS_DATA_PATH:-./projects}:/projects
@@ -160,100 +160,6 @@ services:
       - starlake-network
 
 
-# Airflow 2 services
-  starlake-init-airflow-db:
-    profiles:
-      - airflow
-    <<: *airflow-common
-    image: starlakeai/starlake-airflow:latest
-    restart: on-failure
-    build:
-      <<: *airflow-common-build
-      dockerfile: Dockerfile_airflow
-    depends_on:
-      <<: *airflow-common-depends-on
-    container_name: starlake-init-airflow-db
-    environment:
-      <<: *airflow-common-env
-    entrypoint: >
-      /bin/bash -c "
-      sleep 10 &&
-      airflow db init &&
-      airflow db migrate &&
-      airflow users create --username ${AIRFLOW_USERNAME:-airflow} --firstname ${AIRFLOW_FIRSTNAME:-airflow} --lastname ${AIRFLOW_LASTNAME:-airflow} --role Admin --email ${AIRFLOW_EMAIL:-admin@example.com} --password ${AIRFLOW_PASSWORD:-airflow}"
-
-  starlake-airflow:
-    profiles:
-      - airflow
-    <<: *starlake-airflow
-    image: starlakeai/starlake-airflow:latest
-    build:
-      <<: *airflow-common-build
-      dockerfile: Dockerfile_airflow
-    depends_on:
-      <<: *airflow-common-depends-on
-      starlake-init-airflow-db:
-        condition: service_completed_successfully
-    healthcheck:
-      test: ["CMD", "curl", "-s", "-I", "http://starlake-airflow:8080/airflow/health"]
-      interval: "5s"
-      retries: 60
-    environment:
-      <<: *airflow-common-env
-      AIRFLOW__WEBSERVER__BASE_URL: ${SL_API_HTTP_FRONT_URL:-http://localhost:${SL_PORT:-80}}/airflow
-      AIRFLOW__CORE__LOGGING_LEVEL: INFO
-      AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: 30
-      AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL: 5
-    entrypoint: >
-      /bin/bash -c "
-      sleep 10 &&
-      pip install --no-cache-dir starlake-airflow docker --upgrade --force-reinstall &&
-      airflow webserver &
-      exec airflow scheduler"
-
-  starlake-ui-airflow:
-    profiles:
-      - airflow
-    <<: *starlake-ui-common
-    depends_on:
-      <<: *starlake-ui-common-depends-on
-      starlake-airflow:
-        condition: service_healthy
-    environment:
-      <<: *starlake-ui-common-env
-      SL_API_ORCHESTRATOR_PRIVATE_URL: http://starlake-airflow:8080/airflow/
-      LOAD_DAG_REF: airflow_load_shell
-      TRANSFORM_DAG_REF: airflow_transform_shell
-      SL_API_AIRFLOW_VERSION: 2
-    entrypoint: >
-      /bin/bash -c "
-      sleep 10 &&
-      python3 -m pip install --break-system-packages --no-cache-dir starlake-airflow docker --upgrade &&
-      airflow db init &&
-      airflow db migrate &&
-      /usr/bin/tini -- /app/run-api.sh"
-
-
-  # Airflow 3 services
-  starlake-init-airflow3-db:
-    profiles:
-      - airflow3
-    <<: *airflow-common
-    image: starlakeai/starlake-airflow3:latest
-    restart: on-failure
-    build:
-      <<: *airflow-common-build
-      dockerfile: Dockerfile_airflow3
-    depends_on:
-      <<: *airflow-common-depends-on
-    container_name: starlake-init-airflow3-db
-    environment:
-      <<: *airflow-common-env
-    entrypoint: >
-      /bin/bash -c "
-      sleep 10 &&
-      airflow db migrate"
-
   starlake-airflow3:
     profiles:
       - airflow3
@@ -264,8 +170,6 @@ services:
       dockerfile: Dockerfile_airflow3
     depends_on:
       <<: *airflow-common-depends-on
-      starlake-init-airflow3-db:
-        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://starlake-airflow:8080/airflow/api/v2/version"]
       interval: 30s
@@ -274,11 +178,15 @@ services:
       start_period: 60s
     environment:
       <<: *airflow-common-env
+      AIRFLOW__API__SECRET_KEY: ${AIRFLOW__API__SECRET_KEY:-a_very_secret_key}
+      AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET:-a_very_secret_key}
       AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'true'
       AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
       AIRFLOW__SCHEDULER__STANDALONE_DAG_PROCESSOR: 'true'
+      AIRFLOW__API__EXPOSE_CONFIG: 'true'
       AIRFLOW__API__BASE_URL: ${SL_API_HTTP_FRONT_URL:-http://localhost:${SL_PORT:-80}}/airflow
       AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://starlake-airflow:8080/airflow/execution
       #AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: ${AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL:-60}
       #AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL: ${AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL:-10}
       AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL: ${AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL:-30}
@@ -287,6 +195,7 @@ services:
     entrypoint: >
       /bin/bash -c "
       sleep 10 &&
+      airflow db migrate && 
       airflow users create --username ${AIRFLOW_USERNAME:-airflow} --firstname ${AIRFLOW_FIRSTNAME:-airflow} --lastname ${AIRFLOW_LASTNAME:-airflow} --role Admin --email ${AIRFLOW_EMAIL:-admin@example.com} --password ${AIRFLOW_PASSWORD:-airflow} &&
       pip install --no-cache-dir starlake-airflow docker --upgrade --force-reinstall &&
       airflow api-server &
@@ -313,7 +222,6 @@ services:
       /bin/bash -c "
       sleep 10 &&
       python3 -m pip install --break-system-packages --no-cache-dir starlake-airflow docker --upgrade &&
-      airflow db init &&
       airflow db migrate &&
       /usr/bin/tini -- /app/run-api.sh"
 
@@ -330,10 +238,7 @@ services:
 # Starlake Agent service
   starlake-agent:
     profiles:
-      - airflow
-      - airflow3
-      - dagster
-      - snowflake
+      - ai
     image: starlakeai/starlake-1.5-ask:0.1
     pull_policy: always
     container_name: starlake-agent
@@ -348,7 +253,7 @@ services:
       interval: "5s"
       retries: 60
     ports:
-      - ${SL_AI_PORT:-8000}:8000  # starlake-agent default port
+      - ${SL_ASK_APP_PORT:-8000}:8000  # starlake-agent default port
     environment:
       SL_ASK_APPLICATION_KEY: Starlake7157
       SL_ASK_STARLAKE_JSON_FOLDER: /app/starlake_ask/resources
@@ -371,12 +276,8 @@ services:
     container_name: starlake-gizmo
     restart: on-failure
     depends_on:
-      starlake-ui-airflow:
-        condition: service_healthy
-        required: false
       starlake-ui-airflow3:
         condition: service_healthy
-        required: false
     healthcheck:
       test: ["CMD", "curl", "-s", "http://starlake-gizmo:10900/health"]
       interval: "5s"
