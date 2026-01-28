@@ -1,0 +1,95 @@
+# K3s Test Values Override
+# This file is specifically for local testing with K3s
+# WARNING: DO NOT use these values in production!
+
+# Use local-path storage (K3s built-in)
+global:
+  storageClass: local-path
+
+# PostgreSQL with reduced resources and RWO storage
+postgresql:
+  internal:
+    enabled: true
+    persistence:
+      enabled: true
+      storageClass: local-path
+      size: 2Gi
+      # Note: local-path only supports ReadWriteOnce
+
+# Projects volume - TEMPORARILY using RWO for K3s testing
+# In production, this MUST be ReadWriteMany
+persistence:
+  projects:
+    enabled: true
+    storageClass: local-path
+    size: 2Gi
+    # HACK: We'll use RWO and force all pods to same node via affinity
+
+# Disable logs persistence to simplify
+airflow:
+  logs:
+    persistence:
+      enabled: false
+
+# Reduced resources for local testing
+ui:
+  replicas: 1
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 250m
+    limits:
+      memory: 1Gi
+      cpu: 1000m
+
+airflow:
+  webserver:
+    replicas: 1
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 250m
+      limits:
+        memory: 1Gi
+        cpu: 1000m
+  scheduler:
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 250m
+      limits:
+        memory: 1Gi
+        cpu: 1000m
+
+agent:
+  replicas: 1
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+
+proxy:
+  replicas: 1
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 50m
+    limits:
+      memory: 128Mi
+      cpu: 200m
+
+# Force all pods to same node for shared RWO volume
+# This is a HACK for testing only!
+affinity:
+  podAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchExpressions:
+            - key: app.kubernetes.io/name
+              operator: In
+              values:
+                - starlake
+        topologyKey: kubernetes.io/hostname
