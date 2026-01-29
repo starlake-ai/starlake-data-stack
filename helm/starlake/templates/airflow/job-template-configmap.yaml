@@ -1,0 +1,62 @@
+{{- if and .Values.airflow.enabled .Values.airflow.jobRunner.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "starlake.fullname" . }}-job-template
+  labels:
+    {{- include "starlake.componentLabels" (dict "component" "airflow" "context" .) | nindent 4 }}
+data:
+  # Job template used by the starlake wrapper to create Kubernetes Jobs
+  # Placeholders are replaced at runtime:
+  #   __JOB_NAME__: unique job name (e.g., sl-load-customer-20240129-123456)
+  #   __STARLAKE_COMMAND__: starlake command (e.g., load)
+  #   __STARLAKE_ARGS__: command arguments as JSON array
+  #   __ENV_VARS__: environment variables as JSON array
+  job-template.yaml: |
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: __JOB_NAME__
+      labels:
+        app.kubernetes.io/name: starlake
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: starlake-job
+        app.kubernetes.io/managed-by: airflow
+    spec:
+      ttlSecondsAfterFinished: {{ .Values.airflow.jobRunner.ttlSecondsAfterFinished }}
+      backoffLimit: {{ .Values.airflow.jobRunner.backoffLimit }}
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: starlake
+            app.kubernetes.io/instance: {{ .Release.Name }}
+            app.kubernetes.io/component: starlake-job
+        spec:
+          restartPolicy: Never
+          securityContext:
+            fsGroup: {{ .Values.podSecurityContext.fsGroup }}
+          containers:
+            - name: starlake
+              image: "{{ .Values.airflow.jobRunner.image.repository }}:{{ .Values.airflow.jobRunner.image.tag }}"
+              imagePullPolicy: {{ .Values.airflow.jobRunner.image.pullPolicy }}
+              command: ["starlake"]
+              args: __STARLAKE_ARGS__
+              env:
+                - name: SL_ROOT
+                  value: __SL_ROOT__
+                __ENV_VARS__
+              resources:
+                requests:
+                  memory: "{{ .Values.airflow.jobRunner.resources.requests.memory }}"
+                  cpu: "{{ .Values.airflow.jobRunner.resources.requests.cpu }}"
+                limits:
+                  memory: "{{ .Values.airflow.jobRunner.resources.limits.memory }}"
+                  cpu: "{{ .Values.airflow.jobRunner.resources.limits.cpu }}"
+              volumeMounts:
+                - name: projects
+                  mountPath: /projects
+          volumes:
+            - name: projects
+              persistentVolumeClaim:
+                claimName: {{ include "starlake.fullname" . }}-projects
+{{- end }}
