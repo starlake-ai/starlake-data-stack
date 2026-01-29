@@ -125,6 +125,7 @@ services:
       - ${PROJECTS_DATA_PATH:-./projects}:/projects
       - ${PROJECTS_DATA_PATH:-./projects}/dags:/opt/airflow/dags
       - ${AIRFLOW_LOGS:-./airflow/logs}:/opt/airflow/logs
+      #- /Users/hayssams/.config:/home/airflow/.config
       - ./scripts/airflow/run-airflow3.sh:/app/run-airflow3.sh
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://starlake-airflow:8080/airflow/api/v2/version"]
@@ -243,7 +244,7 @@ services:
       - TLS_ENABLED=0
     volumes:
       - ${PROJECTS_DATA_PATH:-./projects}:/projects
-      - /Users/hayssams/.config:/root/.config
+      #- /Users/hayssams/.config:/root/.config
 
 
   minio:
