@@ -148,6 +148,8 @@ spec:
           env:
             - name: AIRFLOW__CORE__EXECUTOR
               value: {{ .Values.airflow.executor | quote }}
+            - name: AIRFLOW__WEBSERVER__SECRET_KEY
+              value: {{ .Values.airflow.secretKey | quote }}
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -175,6 +177,9 @@ spec:
               value: /opt/java/openjdk
             - name: AIRFLOW__CORE__EXECUTOR
               value: {{ .Values.airflow.executor | quote }}
+            # Secret key must be the same across all Airflow components
+            - name: AIRFLOW__WEBSERVER__SECRET_KEY
+              value: {{ .Values.airflow.secretKey | quote }}
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
