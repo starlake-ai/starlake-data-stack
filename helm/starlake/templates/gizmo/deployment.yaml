@@ -16,6 +16,9 @@ spec:
         {{- include "starlake.componentSelectorLabels" (dict "component" "gizmo" "context" .) | nindent 8 }}
     spec:
       serviceAccountName: {{ include "starlake.serviceAccountName" . }}
+      # fsGroup ensures shared volume files are accessible by all pods
+      securityContext:
+        fsGroup: {{ .Values.podSecurityContext.fsGroup }}
       initContainers:
         {{- include "starlake.waitForPostgresql" . | nindent 8 }}
       containers:

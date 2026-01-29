@@ -16,9 +16,40 @@ spec:
         {{- include "starlake.componentSelectorLabels" (dict "component" "airflow" "context" .) | nindent 8 }}
     spec:
       serviceAccountName: {{ include "starlake.serviceAccountName" . }}
-      # Note: Airflow image has its own user (airflow/50000), don't override with podSecurityContext
+      # fsGroup ensures shared volume files are accessible by all pods
+      # Airflow runs as user 50000, but fsGroup adds group 1000 for shared access
+      securityContext:
+        fsGroup: {{ .Values.podSecurityContext.fsGroup }}
       initContainers:
         {{- include "starlake.waitForPostgresql" . | nindent 8 }}
+        # Fix permissions on existing files - differentiated for security
+        # Most files: group read/write (g+rwX) for shared access
+        # DuckDB stored_secrets: group read only (g-w) to protect credentials
+        - name: fix-permissions
+          image: busybox:1.35
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              echo "Fixing permissions on /projects for group {{ .Values.podSecurityContext.fsGroup }}..."
+
+              # Set group ownership on all files
+              chgrp -R {{ .Values.podSecurityContext.fsGroup }} /projects 2>/dev/null || true
+
+              # Default: group read/write for all files
+              chmod -R g+rwX /projects 2>/dev/null || true
+
+              # DuckDB stored_secrets: remove group write (contains unencrypted credentials)
+              find /projects -type d -name "stored_secrets" -exec chmod -R g-w {} \; 2>/dev/null || true
+
+              echo "Permissions fixed (stored_secrets: g-w, rest: g+rwX)"
+              ls -la /projects/
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: projects
+              mountPath: /projects
         {{- if .Values.airflow.installPythonPackages }}
         # Copy Starlake CLI from UI image (only needed when using official Airflow image)
         # When using custom image (Dockerfile_airflow), starlake is already installed
@@ -160,6 +191,39 @@ spec:
             - name: AIRFLOW__CORE__LOAD_EXAMPLES
               value: "false"
       containers:
+        # Sidecar container that continuously fixes permissions on /projects
+        # This is needed because Airflow subprocesses don't inherit umask from the main shell
+        - name: permission-fixer
+          image: busybox:1.35
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              echo "Starting permission fixer sidecar..."
+              while true; do
+                # Fix group ownership and permissions on all files
+                chgrp -R {{ .Values.podSecurityContext.fsGroup }} /projects 2>/dev/null || true
+                chmod -R g+rwX /projects 2>/dev/null || true
+
+                # DuckDB stored_secrets: remove group write (contains unencrypted credentials)
+                find /projects -type d -name "stored_secrets" -exec chmod -R g-w {} \; 2>/dev/null || true
+
+                # Run every 5 seconds
+                sleep 5
+              done
+          securityContext:
+            runAsUser: 0
+          resources:
+            limits:
+              cpu: 50m
+              memory: 32Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
+          volumeMounts:
+            - name: projects
+              mountPath: /projects
         - name: airflow
           image: "{{ .Values.airflow.image.repository }}:{{ .Values.airflow.image.tag }}"
           imagePullPolicy: {{ .Values.airflow.image.pullPolicy }}
@@ -209,6 +273,9 @@ spec:
             - /bin/bash
             - -c
             - |
+              # Set umask to allow group write on new files/directories
+              umask 002
+
               echo "Waiting before starting Airflow..."
               sleep 10
 

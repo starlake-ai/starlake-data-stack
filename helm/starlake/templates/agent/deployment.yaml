@@ -16,7 +16,9 @@ spec:
         {{- include "starlake.componentSelectorLabels" (dict "component" "agent" "context" .) | nindent 8 }}
     spec:
       serviceAccountName: {{ include "starlake.serviceAccountName" . }}
-      # Note: Agent image requires root user, so we don't apply podSecurityContext
+      # fsGroup ensures shared volume files are accessible by all pods
+      securityContext:
+        fsGroup: {{ .Values.podSecurityContext.fsGroup }}
       initContainers:
         {{- include "starlake.waitForPostgresql" . | nindent 8 }}
       containers:
