@@ -19,53 +19,69 @@ data:
 
     # Generate unique job name based on command and timestamp
     TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-    RANDOM_SUFFIX=$(head -c 4 /dev/urandom | xxd -p)
+    RANDOM_SUFFIX=$(printf '%04x' $RANDOM)
     COMMAND="${1:-unknown}"
     JOB_NAME="sl-${COMMAND}-${TIMESTAMP}-${RANDOM_SUFFIX}"
     # Kubernetes job names must be lowercase and max 63 chars
     JOB_NAME=$(echo "$JOB_NAME" | tr '[:upper:]' '[:lower:]' | cut -c1-63)
 
-    # Build args array for YAML
-    ARGS_YAML="["
+    # Build args array for YAML (JSON array format)
+    ARGS_JSON="["
     FIRST=true
     for arg in "$@"; do
       if [ "$FIRST" = true ]; then
         FIRST=false
       else
-        ARGS_YAML="${ARGS_YAML}, "
+        ARGS_JSON="${ARGS_JSON}, "
       fi
       # Escape quotes in argument
       ESCAPED_ARG=$(echo "$arg" | sed 's/"/\\"/g')
-      ARGS_YAML="${ARGS_YAML}\"${ESCAPED_ARG}\""
+      ARGS_JSON="${ARGS_JSON}\"${ESCAPED_ARG}\""
     done
-    ARGS_YAML="${ARGS_YAML}]"
-
-    # Build environment variables YAML block
-    # Pass through relevant SL_* environment variables
-    ENV_YAML=""
-    for var in $(env | grep -E "^SL_" | cut -d= -f1); do
-      value="${!var}"
-      # Escape special characters
-      escaped_value=$(echo "$value" | sed 's/"/\\"/g')
-      ENV_YAML="${ENV_YAML}
-                - name: ${var}
-                  value: \"${escaped_value}\""
-    done
+    ARGS_JSON="${ARGS_JSON}]"
 
     # Create temporary job manifest
     TEMP_JOB=$(mktemp /tmp/starlake-job-XXXXXX.yaml)
     trap "rm -f $TEMP_JOB" EXIT
 
-    # Replace placeholders in template
+    # Build env vars YAML (12 spaces indent to match template)
+    ENV_FILE=$(mktemp /tmp/starlake-env-XXXXXX.yaml)
+    trap "rm -f $TEMP_JOB $ENV_FILE" EXIT
+
+    for var in $(env | grep -E "^SL_" | grep -v "^SL_ROOT=" | cut -d= -f1); do
+      value="${!var}"
+      # 12 spaces for - name:, 14 spaces for value: (matching template)
+      echo "            - name: ${var}" >> "$ENV_FILE"
+      echo "              value: \"${value}\"" >> "$ENV_FILE"
+    done
+
+    # Read template and create job manifest
+    # First pass: replace simple placeholders
     sed -e "s|__JOB_NAME__|${JOB_NAME}|g" \
-        -e "s|__STARLAKE_ARGS__|${ARGS_YAML}|g" \
+        -e "s|__STARLAKE_ARGS__|${ARGS_JSON}|g" \
         -e "s|__SL_ROOT__|${SL_ROOT:-/projects}|g" \
-        -e "s|__ENV_VARS__|${ENV_YAML}|g" \
         "$JOB_TEMPLATE" > "$TEMP_JOB"
+
+    # Second pass: replace __ENV_VARS__ with actual env vars from file
+    if [ -s "$ENV_FILE" ]; then
+      # Use awk to replace __ENV_VARS__ with file contents
+      awk -v envfile="$ENV_FILE" '
+        /__ENV_VARS__/ {
+          while ((getline line < envfile) > 0) print line
+          close(envfile)
+          next
+        }
+        {print}
+      ' "$TEMP_JOB" > "${TEMP_JOB}.tmp" && mv "${TEMP_JOB}.tmp" "$TEMP_JOB"
+    else
+      # No env vars, just remove the placeholder
+      sed -i '/__ENV_VARS__/d' "$TEMP_JOB"
+    fi
 
     echo "=== Creating Kubernetes Job: ${JOB_NAME} ==="
     echo "Command: starlake $@"
     echo "Namespace: ${NAMESPACE}"
+    echo "SL_ROOT: ${SL_ROOT:-/projects}"
 
     # Create the job
     kubectl apply -f "$TEMP_JOB" -n "$NAMESPACE"
