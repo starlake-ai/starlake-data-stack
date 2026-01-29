@@ -199,6 +199,32 @@ airflow:
       storageClass: ""
       size: 20Gi
 
+  # Job Runner - Execute Starlake tasks as Kubernetes Jobs
+  # This offloads heavy processing from the Airflow pod to dedicated Jobs
+  jobRunner:
+    enabled: false  # Set to true to enable K8s Job execution mode
+
+    # Starlake image for Jobs (lightweight, CLI only)
+    image:
+      repository: starlakeai/starlake
+      tag: "latest"
+      pullPolicy: IfNotPresent
+
+    # Resources per Job (each Starlake task gets its own pod)
+    resources:
+      requests:
+        memory: "1Gi"
+        cpu: "500m"
+      limits:
+        memory: "2Gi"
+        cpu: "2000m"
+
+    # Cleanup: delete Jobs after completion
+    ttlSecondsAfterFinished: 60  # 1 minute after success
+
+    # Backoff limit for failed jobs
+    backoffLimit: 0  # No retries (Airflow handles retries)
+
 # Starlake Agent (AI Assistant)
 agent:
   enabled: true

@@ -1,0 +1,39 @@
+{{- if and .Values.airflow.enabled .Values.airflow.jobRunner.enabled }}
+---
+# Role to allow Airflow to create and manage Kubernetes Jobs for Starlake tasks
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "starlake.fullname" . }}-job-runner
+  labels:
+    {{- include "starlake.componentLabels" (dict "component" "airflow" "context" .) | nindent 4 }}
+rules:
+  # Jobs management - create, monitor, delete Starlake task jobs
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete", "deletecollection"]
+  # Pods management - needed to stream logs and check status
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  # Pod logs - needed to stream task output back to Airflow
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list", "watch"]
+---
+# Bind the role to the Starlake ServiceAccount used by Airflow
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "starlake.fullname" . }}-job-runner
+  labels:
+    {{- include "starlake.componentLabels" (dict "component" "airflow" "context" .) | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "starlake.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ include "starlake.fullname" . }}-job-runner
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
