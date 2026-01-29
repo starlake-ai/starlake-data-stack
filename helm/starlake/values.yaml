@@ -139,6 +139,11 @@ airflow:
   # (e.g., image built from Dockerfile_airflow)
   installPythonPackages: true
 
+  # Secret key for Airflow webserver session signing
+  # IMPORTANT: Must be the same across all Airflow components (webserver, scheduler, workers)
+  # Generate a new one for production: python -c "import secrets; print(secrets.token_hex(32))"
+  secretKey: "starlake-airflow-secret-key-change-in-production"
+
   # Admin user credentials
   admin:
     username: airflow
@@ -148,14 +153,15 @@ airflow:
     email: admin@example.com
 
   # Webserver configuration
+  # Note: This pod runs webserver + scheduler + pip install, requires significant memory
   webserver:
     replicas: 1
     resources:
       requests:
-        memory: "1Gi"
-        cpu: "500m"
-      limits:
         memory: "4Gi"
+        cpu: "1000m"
+      limits:
+        memory: "16Gi"
         cpu: "2000m"
     service:
       type: ClusterIP
@@ -165,10 +171,10 @@ airflow:
   scheduler:
     resources:
       requests:
-        memory: "1Gi"
+        memory: "4Gi"
         cpu: "500m"
       limits:
-        memory: "4Gi"
+        memory: "8Gi"
         cpu: "2000m"
 
   # Executor type
