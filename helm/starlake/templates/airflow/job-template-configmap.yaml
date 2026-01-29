@@ -39,7 +39,7 @@ data:
             - name: starlake
               image: "{{ .Values.airflow.jobRunner.image.repository }}:{{ .Values.airflow.jobRunner.image.tag }}"
               imagePullPolicy: {{ .Values.airflow.jobRunner.image.pullPolicy }}
-              command: ["starlake"]
+              command: ["/app/starlake.sh"]
               args: __STARLAKE_ARGS__
               env:
                 - name: SL_ROOT
