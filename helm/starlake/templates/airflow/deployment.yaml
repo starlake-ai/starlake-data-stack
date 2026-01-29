@@ -293,12 +293,13 @@ spec:
               {{- end }}
 
               {{- if .Values.airflow.jobRunner.enabled }}
-              # Install kubectl for Kubernetes Job execution
+              # Install kubectl for Kubernetes Job execution (into shared-tools which is writable)
               echo "Installing kubectl for Job Runner..."
+              mkdir -p /shared-tools/bin
               curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
                 && chmod +x kubectl \
-                && mv kubectl /usr/local/bin/kubectl \
-                && echo "kubectl installed: $(kubectl version --client --short 2>/dev/null || kubectl version --client)"
+                && mv kubectl /shared-tools/bin/kubectl \
+                && echo "kubectl installed: $(/shared-tools/bin/kubectl version --client 2>/dev/null | head -1)"
               {{- end }}
 
               echo "Setting up Starlake tools in PATH..."
