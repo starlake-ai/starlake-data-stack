@@ -292,6 +292,15 @@ spec:
               echo "Skipping pip install (packages pre-installed in image)"
               {{- end }}
 
+              {{- if .Values.airflow.jobRunner.enabled }}
+              # Install kubectl for Kubernetes Job execution
+              echo "Installing kubectl for Job Runner..."
+              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
+                && chmod +x kubectl \
+                && mv kubectl /usr/local/bin/kubectl \
+                && echo "kubectl installed: $(kubectl version --client --short 2>/dev/null || kubectl version --client)"
+              {{- end }}
+
               echo "Setting up Starlake tools in PATH..."
               # Add shared-tools/bin to PATH for starlake, gcloud, gsutil
               export PATH="/shared-tools/bin:$PATH"
@@ -346,12 +355,28 @@ spec:
             - name: logs
               mountPath: /opt/airflow/logs
             {{- end }}
+            {{- if .Values.airflow.jobRunner.enabled }}
+            - name: job-template
+              mountPath: /etc/starlake
+            - name: starlake-wrapper
+              mountPath: /usr/local/bin/starlake-k8s
+              subPath: starlake-k8s.sh
+            {{- end }}
       volumes:
         - name: shared-tools
           emptyDir: {}
         - name: projects
           persistentVolumeClaim:
             claimName: {{ include "starlake.fullname" . }}-projects
+        {{- if .Values.airflow.jobRunner.enabled }}
+        - name: job-template
+          configMap:
+            name: {{ include "starlake.fullname" . }}-job-template
+        - name: starlake-wrapper
+          configMap:
+            name: {{ include "starlake.fullname" . }}-starlake-wrapper
+            defaultMode: 0755
+        {{- end }}
         {{- if .Values.airflow.logs.persistence.enabled }}
         - name: logs
           persistentVolumeClaim:
