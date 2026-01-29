@@ -1,0 +1,123 @@
+{{- if and .Values.airflow.enabled .Values.airflow.jobRunner.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "starlake.fullname" . }}-starlake-wrapper
+  labels:
+    {{- include "starlake.componentLabels" (dict "component" "airflow" "context" .) | nindent 4 }}
+data:
+  # Wrapper script that executes starlake commands as Kubernetes Jobs
+  # Usage: starlake-k8s <command> [args...]
+  # Example: starlake-k8s load --domains=customer --tables=orders
+  starlake-k8s.sh: |
+    #!/bin/bash
+    set -e
+
+    # Configuration from environment
+    JOB_TEMPLATE="/etc/starlake/job-template.yaml"
+    NAMESPACE="${STARLAKE_NAMESPACE:-{{ .Release.Namespace }}}"
+
+    # Generate unique job name based on command and timestamp
+    TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+    RANDOM_SUFFIX=$(head -c 4 /dev/urandom | xxd -p)
+    COMMAND="${1:-unknown}"
+    JOB_NAME="sl-${COMMAND}-${TIMESTAMP}-${RANDOM_SUFFIX}"
+    # Kubernetes job names must be lowercase and max 63 chars
+    JOB_NAME=$(echo "$JOB_NAME" | tr '[:upper:]' '[:lower:]' | cut -c1-63)
+
+    # Build args array for YAML
+    ARGS_YAML="["
+    FIRST=true
+    for arg in "$@"; do
+      if [ "$FIRST" = true ]; then
+        FIRST=false
+      else
+        ARGS_YAML="${ARGS_YAML}, "
+      fi
+      # Escape quotes in argument
+      ESCAPED_ARG=$(echo "$arg" | sed 's/"/\\"/g')
+      ARGS_YAML="${ARGS_YAML}\"${ESCAPED_ARG}\""
+    done
+    ARGS_YAML="${ARGS_YAML}]"
+
+    # Build environment variables YAML block
+    # Pass through relevant SL_* environment variables
+    ENV_YAML=""
+    for var in $(env | grep -E "^SL_" | cut -d= -f1); do
+      value="${!var}"
+      # Escape special characters
+      escaped_value=$(echo "$value" | sed 's/"/\\"/g')
+      ENV_YAML="${ENV_YAML}
+                - name: ${var}
+                  value: \"${escaped_value}\""
+    done
+
+    # Create temporary job manifest
+    TEMP_JOB=$(mktemp /tmp/starlake-job-XXXXXX.yaml)
+    trap "rm -f $TEMP_JOB" EXIT
+
+    # Replace placeholders in template
+    sed -e "s|__JOB_NAME__|${JOB_NAME}|g" \
+        -e "s|__STARLAKE_ARGS__|${ARGS_YAML}|g" \
+        -e "s|__SL_ROOT__|${SL_ROOT:-/projects}|g" \
+        -e "s|__ENV_VARS__|${ENV_YAML}|g" \
+        "$JOB_TEMPLATE" > "$TEMP_JOB"
+
+    echo "=== Creating Kubernetes Job: ${JOB_NAME} ==="
+    echo "Command: starlake $@"
+    echo "Namespace: ${NAMESPACE}"
+
+    # Create the job
+    kubectl apply -f "$TEMP_JOB" -n "$NAMESPACE"
+
+    # Wait for pod to be created and get its name
+    echo "=== Waiting for pod to start ==="
+    POD_NAME=""
+    for i in $(seq 1 60); do
+      POD_NAME=$(kubectl get pods -n "$NAMESPACE" -l "job-name=${JOB_NAME}" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+      if [ -n "$POD_NAME" ]; then
+        POD_STATUS=$(kubectl get pod "$POD_NAME" -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Pending")
+        if [ "$POD_STATUS" != "Pending" ]; then
+          break
+        fi
+      fi
+      sleep 2
+    done
+
+    if [ -z "$POD_NAME" ]; then
+      echo "ERROR: Pod not created after 120 seconds"
+      kubectl get jobs -n "$NAMESPACE" -l "job-name=${JOB_NAME}" -o yaml
+      exit 1
+    fi
+
+    echo "=== Pod ${POD_NAME} started, streaming logs ==="
+
+    # Stream logs (follow until completion)
+    kubectl logs -f "$POD_NAME" -n "$NAMESPACE" -c starlake 2>/dev/null || true
+
+    # Wait for job to complete and get exit status
+    echo "=== Waiting for job completion ==="
+    kubectl wait --for=condition=complete --timeout=3600s "job/${JOB_NAME}" -n "$NAMESPACE" 2>/dev/null && {
+      echo "=== Job completed successfully ==="
+      exit 0
+    }
+
+    # Check if job failed
+    kubectl wait --for=condition=failed --timeout=10s "job/${JOB_NAME}" -n "$NAMESPACE" 2>/dev/null && {
+      echo "=== Job failed ==="
+      # Get exit code from pod
+      EXIT_CODE=$(kubectl get pod "$POD_NAME" -n "$NAMESPACE" -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' 2>/dev/null || echo "1")
+      exit "${EXIT_CODE:-1}"
+    }
+
+    # Fallback - job might still be running or in unknown state
+    JOB_STATUS=$(kubectl get job "${JOB_NAME}" -n "$NAMESPACE" -o jsonpath='{.status.conditions[*].type}' 2>/dev/null || echo "Unknown")
+    echo "=== Job status: ${JOB_STATUS} ==="
+
+    # Return appropriate exit code
+    if echo "$JOB_STATUS" | grep -q "Complete"; then
+      exit 0
+    else
+      exit 1
+    fi
+{{- end }}
