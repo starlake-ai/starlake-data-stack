@@ -481,7 +481,7 @@ while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
     CRASHLOOP=$(echo "$PODS_STATUS" | grep -c "CrashLoopBackOff\|ImagePullBackOff" || true)
     ERROR=$(echo "$PODS_STATUS" | grep -E "Error" | grep -v "Completed" | wc -l | tr -d ' ')
     INIT=$(echo "$PODS_STATUS" | grep -c "Init:" || true)
-    READY=$(echo "$PODS_STATUS" | grep -E "1/1.*Running" | wc -l | tr -d ' ')
+    READY=$(echo "$PODS_STATUS" | grep -E "[0-9]+/[0-9]+.*Running" | awk '{split($2,a,"/"); if(a[1]==a[2]) print}' | wc -l | tr -d ' ')
 
     echo -ne "\r[$ATTEMPT/$MAX_ATTEMPTS] Pods: $READY/$TOTAL Ready, $RUNNING Running, $INIT Init, $PENDING Pending, $CRASHLOOP CrashLoop    "
 
@@ -540,7 +540,7 @@ else
     show_pod_status
 
     # Vérifier si c'est acceptable (certains pods peuvent avoir des restarts)
-    READY=$(kubectl get pods -n $NAMESPACE --no-headers | grep -E "1/1.*Running" | wc -l | tr -d ' ')
+    READY=$(kubectl get pods -n $NAMESPACE --no-headers | grep -E "[0-9]+/[0-9]+.*Running" | awk '{split($2,a,"/"); if(a[1]==a[2]) print}' | wc -l | tr -d ' ')
     if [ "$READY" -ge 5 ]; then
         log_warning "La plupart des pods sont prêts ($READY/6), on continue..."
     else
