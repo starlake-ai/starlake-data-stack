@@ -71,30 +71,6 @@ x-starlake-ui-common:
     - ${EXTERNAL_PROJECTS_DATA_PATH:-./external_projects}:/external_projects
 
 
-x-starlake-projects-common:
-  &starlake-projects-common
-  build:
-    context: .  # Assuming Dockerfile_projects is in the current directory
-    dockerfile: Dockerfile_projects
-  image: starlakeai/starlake-projects:latest
-  pull_policy: always
-  container_name: starlake-projects
-  restart: on-failure
-  depends_on:
-    &starlake-projects-common-depends-on
-    starlake-db:
-      condition: service_healthy
-  networks:
-    &airflow-common-networks
-    - starlake-network
-  environment:
-    POSTGRES_USER: ${SL_POSTGRES_USER:-dbuser}
-    POSTGRES_PASSWORD: ${SL_POSTGRES_PASSWORD:-dbuser123}
-    POSTGRES_DB: ${SL_POSTGRES_DB:-starlake}
-    POSTGRES_HOST: starlake-db
-  volumes:
-    - ${PROJECTS_DATA_PATH:-./projects}:/projects
-
 services:
 
 # Database service
@@ -149,7 +125,6 @@ services:
       - ${PROJECTS_DATA_PATH:-./projects}:/projects
       - ${PROJECTS_DATA_PATH:-./projects}/dags:/opt/airflow/dags
       - ${AIRFLOW_LOGS:-./airflow/logs}:/opt/airflow/logs
-      - /Users/hayssams/.config:/home/airflow/.config
       - ./scripts/airflow/run-airflow3.sh:/app/run-airflow3.sh
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://starlake-airflow:8080/airflow/api/v2/version"]
@@ -198,16 +173,6 @@ services:
       python3 -m pip install --break-system-packages --no-cache-dir starlake-airflow docker --upgrade &&
       airflow db migrate &&
       /usr/bin/tini -- /app/run-api.sh"
-
-  starlake-projects-airflow3:
-    profiles:
-      - airflow3
-    <<: *starlake-projects-common
-    depends_on:
-      <<: *starlake-projects-common-depends-on
-      starlake-ui-airflow3:
-        condition: service_healthy
-
 
 # Starlake Agent service
   starlake-agent:
