@@ -420,6 +420,7 @@ helm install starlake $CHART_PATH \
     --set demo.enabled=true \
     --set ui.frontendUrl=http://localhost:8080 \
     --set airflow.baseUrl=http://localhost:8080/airflow \
+    --set airflow.jobRunner.enabled=true \
     $LOCAL_IMAGE_OPTS || {
         log_error "Installation du chart a échoué"
         exit 1
