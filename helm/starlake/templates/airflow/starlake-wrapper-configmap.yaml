@@ -17,6 +17,21 @@ data:
     JOB_TEMPLATE="/etc/starlake/job-template.yaml"
     NAMESPACE="${STARLAKE_NAMESPACE:-{{ .Release.Namespace }}}"
 
+    # Configure kubectl for in-cluster authentication
+    # Use kubernetes.default.svc as fallback when env vars not available (e.g., in Airflow subprocess)
+    if [ -n "$KUBERNETES_SERVICE_HOST" ]; then
+      KUBE_API_SERVER="https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT}"
+    else
+      KUBE_API_SERVER="https://kubernetes.default.svc:443"
+    fi
+    KUBE_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+    KUBE_CA_CERT="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+    # Set kubectl alias with in-cluster config
+    kubectl() {
+      /shared-tools/bin/kubectl --server="$KUBE_API_SERVER" --token="$KUBE_TOKEN" --certificate-authority="$KUBE_CA_CERT" "$@"
+    }
+
     # Generate unique job name based on command and timestamp
     TIMESTAMP=$(date +%Y%m%d-%H%M%S)
     RANDOM_SUFFIX=$(printf '%04x' $RANDOM)
@@ -26,6 +41,7 @@ data:
     JOB_NAME=$(echo "$JOB_NAME" | tr '[:upper:]' '[:lower:]' | cut -c1-63)
 
     # Build args array for YAML (JSON array format)
+    # Proper JSON escaping to prevent command injection
     ARGS_JSON="["
     FIRST=true
     for arg in "$@"; do
@@ -34,8 +50,8 @@ data:
       else
         ARGS_JSON="${ARGS_JSON}, "
       fi
-      # Escape quotes in argument
-      ESCAPED_ARG=$(echo "$arg" | sed 's/"/\\"/g')
+      # Properly escape for JSON: backslashes first, then quotes, tabs, newlines
+      ESCAPED_ARG=$(printf '%s' "$arg" | sed 's/\\/\\\\/g; s/"/\\"/g; s/	/\\t/g' | tr '\n' ' ')
       ARGS_JSON="${ARGS_JSON}\"${ESCAPED_ARG}\""
     done
     ARGS_JSON="${ARGS_JSON}]"
@@ -50,9 +66,11 @@ data:
 
     for var in $(env | grep -E "^SL_" | grep -v "^SL_ROOT=" | cut -d= -f1); do
       value="${!var}"
+      # Escape for YAML string: backslashes first, then double quotes
+      escaped_value=$(printf '%s' "$value" | sed 's/\\/\\\\/g; s/"/\\"/g')
       # 12 spaces for - name:, 14 spaces for value: (matching template)
       echo "            - name: ${var}" >> "$ENV_FILE"
-      echo "              value: \"${value}\"" >> "$ENV_FILE"
+      echo "              value: \"${escaped_value}\"" >> "$ENV_FILE"
     done
 
     # Read template and create job manifest
@@ -83,8 +101,8 @@ data:
     echo "Namespace: ${NAMESPACE}"
     echo "SL_ROOT: ${SL_ROOT:-/projects}"
 
-    # Create the job
-    kubectl apply -f "$TEMP_JOB" -n "$NAMESPACE"
+    # Create the job (--validate=false to avoid openapi download issues)
+    kubectl apply -f "$TEMP_JOB" -n "$NAMESPACE" --validate=false
 
     # Wait for pod to be created and get its name
     echo "=== Waiting for pod to start ==="
