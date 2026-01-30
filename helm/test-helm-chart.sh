@@ -207,9 +207,10 @@ import_existing_image() {
     fi
 }
 
-# 1. Construire l'image Airflow depuis Dockerfile_airflow_k8s (version sans docker socket)
-# Note: On utilise Dockerfile_airflow_k8s qui contient le script starlake en mode shell
+# 1. Construire l'image Airflow depuis Dockerfile_airflow_k8s (K8s Job execution mode)
+# Note: On utilise Dockerfile_airflow_k8s qui crée des K8s Jobs pour chaque commande starlake
 # au lieu de Dockerfile_airflow qui utilise docker exec (incompatible avec K8s)
+# Cette image inclut kubectl et le wrapper starlake qui crée des Jobs K8s
 if build_and_import_image "Dockerfile_airflow_k8s" "$AIRFLOW_IMAGE_LOCAL" "Airflow (K8s)"; then
     USE_LOCAL_AIRFLOW_IMAGE="true"
 fi
@@ -358,9 +359,13 @@ log_info "  Storage: local-path (K3s built-in)"
 # Préparer les options d'images locales
 LOCAL_IMAGE_OPTS=""
 
-# Image Airflow
+# Image Airflow (K8s Job mode)
+# L'image Dockerfile_airflow_k8s inclut:
+# - kubectl pour créer des K8s Jobs
+# - Le wrapper starlake qui crée des Jobs au lieu d'exécuter localement
+# - starlake-airflow 0.4.x pré-installé (compatible Airflow 2)
 if [ "$USE_LOCAL_AIRFLOW_IMAGE" = "true" ]; then
-    log_info "  Image Airflow: $AIRFLOW_IMAGE_LOCAL (locale, packages pré-installés)"
+    log_info "  Image Airflow: $AIRFLOW_IMAGE_LOCAL (K8s Job mode, packages pré-installés)"
     LOCAL_IMAGE_OPTS="$LOCAL_IMAGE_OPTS --set airflow.image.repository=starlake-airflow --set airflow.image.tag=local --set airflow.image.pullPolicy=Never --set airflow.installPythonPackages=false"
 else
     log_info "  Image Airflow: apache/airflow (par défaut, pip install au démarrage)"
@@ -406,8 +411,8 @@ helm install starlake $CHART_PATH \
     --set postgresql.internal.persistence.storageClass=local-path \
     --set persistence.projects.size=2Gi \
     --set persistence.projects.storageClass=local-path \
-    --set airflow.webserver.resources.requests.memory=1Gi \
-    --set airflow.webserver.resources.limits.memory=4Gi \
+    --set airflow.webserver.resources.requests.memory=4Gi \
+    --set airflow.webserver.resources.limits.memory=16Gi \
     --set ui.resources.requests.memory=512Mi \
     --set ui.resources.limits.memory=2Gi \
     --set agent.resources.requests.memory=256Mi \
