@@ -1,5 +1,11 @@
-# Dockerfile for Airflow on Kubernetes (without Docker socket dependency)
+# Dockerfile for Airflow on Kubernetes with K8s Job execution
 # Use this instead of Dockerfile_airflow for Kubernetes deployments
+#
+# This image creates K8s Jobs for each starlake command, offloading heavy
+# processing from the Airflow pod. Requires:
+# - ServiceAccount with RBAC permissions to create/manage Jobs
+# - Job template ConfigMap mounted at /etc/starlake/job-template.yaml
+# - automountServiceAccountToken: true
 
 # Stage 1: Copy Starlake CLI from UI image
 FROM starlakeai/starlake-1.5-ui:1.5 AS starlake-cli
@@ -10,11 +16,15 @@ FROM apache/airflow:2.11.0
 # Switch to root user to install additional packages
 USER root
 
-# Install NFS client utilities (no docker-ce-cli needed in K8s)
+# Install NFS client utilities and kubectl for K8s Job creation
 RUN apt-get update \
     && apt-get install -y nfs-common \
     mandoc \
     less \
+    curl \
+    && curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
+    && chmod +x kubectl \
+    && mv kubectl /usr/local/bin/kubectl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -26,8 +36,8 @@ RUN echo "airflow ALL=(ALL:ALL) NOPASSWD: ALL"  > /etc/sudoers.d/airflow
 # Copy the actual Starlake CLI (Java) from UI image
 COPY --from=starlake-cli /app/starlake /app/starlake
 
-# Install SL CLI wrapper for Kubernetes (shell mode, no docker exec)
-# This wrapper handles --options parsing, sets JAVA_HOME, and calls the actual starlake.sh
+# Install SL CLI wrapper for Kubernetes Job execution
+# This wrapper creates K8s Jobs to offload starlake commands from the Airflow pod
 # IMPORTANT: We rename the original starlake to starlake-original and replace it with our wrapper
 # because Airflow DAGs call /app/starlake/starlake directly (not /usr/local/bin/starlake)
 RUN mv /app/starlake/starlake /app/starlake/starlake-original 2>/dev/null || true
@@ -35,7 +45,8 @@ COPY scripts/kubernetes/starlake.sh /app/starlake/starlake
 RUN chmod +x /app/starlake/starlake \
     && chmod +x /app/starlake/starlake.sh \
     && chmod +x /app/starlake/starlake-original 2>/dev/null || true \
-    && ln -sf /app/starlake/starlake /usr/local/bin/starlake
+    && ln -sf /app/starlake/starlake /usr/local/bin/starlake \
+    && ln -sf /app/starlake/starlake /usr/local/bin/starlake-k8s
 
 # Copy Java runtime from UI image (required for starlake CLI)
 COPY --from=starlake-cli /opt/java /opt/java
@@ -72,6 +83,6 @@ RUN pip install --no-cache-dir \
     apache-airflow-providers-amazon \
     apache-airflow-providers-google
 
-# Install SL Python libraries (no docker package needed in K8s)
-RUN pip install --no-cache-dir \
-    starlake-airflow~=0.4 --upgrade
+# Install SL Python libraries for Airflow 2 (no docker package needed in K8s)
+# IMPORTANT: Pin starlake-airflow~=0.4 for Airflow 2 compatibility (0.5+ requires Airflow 3)
+RUN pip install --no-cache-dir "starlake-airflow>=0.4,<0.5"
