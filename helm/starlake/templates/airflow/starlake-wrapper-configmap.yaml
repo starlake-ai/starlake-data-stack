@@ -1,4 +1,4 @@
-{{- if and .Values.airflow.enabled .Values.airflow.jobRunner.enabled }}
+{{- if and .Values.airflow.enabled .Values.airflow.jobRunner.enabled (not .Values.airflow.jobRunner.useBuiltinWrapper) }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

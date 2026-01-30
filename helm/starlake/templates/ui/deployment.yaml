@@ -42,8 +42,9 @@ spec:
           - /bin/bash
           - -c
           - |
-            echo "Installing starlake-airflow package..."
-            python3 -m pip install --break-system-packages --no-cache-dir starlake-airflow docker --upgrade
+            echo "Installing starlake-airflow package (0.4.x for Airflow 2)..."
+            # IMPORTANT: Pin starlake-airflow~=0.4 for Airflow 2 (0.5+ requires Airflow 3)
+            python3 -m pip install --break-system-packages --no-cache-dir "starlake-airflow>=0.4,<0.5" docker
             airflow db init || true
             airflow db migrate || true
             echo "Installation complete!"
@@ -140,6 +141,11 @@ spec:
           value: {{ .Values.airflow.admin.username | quote }}
         - name: SL_API_AIRFLOW_PASSWORD
           value: {{ .Values.airflow.admin.password | quote }}
+        {{- if .Values.airflow.jobRunner.enabled }}
+        # When Job Runner is enabled, dag-generate should produce DAGs that use starlake-k8s
+        - name: SL_STARLAKE_PATH
+          value: "starlake-k8s"
+        {{- end }}
         {{- end }}
         - name: SL_API_AI_URL
           value: http://{{ include "starlake.fullname" . }}-agent:8000

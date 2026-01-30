@@ -44,10 +44,13 @@ spec:
               # Default: group read/write for all files
               chmod -R g+rwX /projects 2>/dev/null || true
 
-              # DuckDB stored_secrets: remove group write (contains unencrypted credentials)
+              # DuckDB stored_secrets directories: remove group write (contains unencrypted credentials)
               find /projects -type d -name "stored_secrets" -exec chmod -R g-w {} \; 2>/dev/null || true
 
-              echo "Permissions fixed (stored_secrets: g-w, rest: g+rwX)"
+              # DuckDB secret files: owner-only (DuckDB requires 0600 for security)
+              find /projects -name "*.duckdb_secret" -exec chmod 600 {} \; 2>/dev/null || true
+
+              echo "Permissions fixed (stored_secrets: g-w, .duckdb_secret: 600, rest: g+rwX)"
               ls -la /projects/
           securityContext:
             runAsUser: 0
@@ -148,6 +151,15 @@ spec:
                 ln -sf /shared-tools/gcloud/google-cloud-sdk/bin/gsutil /shared-tools/bin/gsutil
               fi
 
+              {{- if .Values.airflow.jobRunner.enabled }}
+              # Install kubectl for Job Runner (must be done in initContainer as root)
+              echo "Installing kubectl for Job Runner..."
+              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+              chmod +x kubectl
+              mv kubectl /shared-tools/bin/kubectl
+              echo "kubectl installed: $(/shared-tools/bin/kubectl version --client 2>/dev/null | head -1)"
+              {{- end }}
+
               echo "Tools setup complete!"
               echo "Contents of /shared-tools:"
               ls -la /shared-tools/
@@ -210,8 +222,11 @@ spec:
                 chgrp -R {{ .Values.podSecurityContext.fsGroup }} /projects 2>/dev/null || true
                 chmod -R g+rwX /projects 2>/dev/null || true
 
-                # DuckDB stored_secrets: remove group write (contains unencrypted credentials)
+                # DuckDB stored_secrets directories: remove group write (contains unencrypted credentials)
                 find /projects -type d -name "stored_secrets" -exec chmod -R g-w {} \; 2>/dev/null || true
+
+                # DuckDB secret files: owner-only (DuckDB requires 0600 for security)
+                find /projects -name "*.duckdb_secret" -exec chmod 600 {} \; 2>/dev/null || true
 
                 # Run every 5 seconds
                 sleep 5
@@ -294,28 +309,18 @@ spec:
               sleep 10
 
               {{- if .Values.airflow.installPythonPackages }}
-              echo "Installing Python packages (like Dockerfile_airflow)..."
+              echo "Installing Python packages (starlake-airflow for Airflow 2)..."
+              # IMPORTANT: Pin starlake-airflow~=0.4 for Airflow 2 (0.5+ requires Airflow 3)
               pip install --no-cache-dir \
-                starlake-airflow~=0.4 \
+                "starlake-airflow>=0.4,<0.5" \
                 docker \
-                awscli \
                 apache-airflow-providers-amazon \
-                apache-airflow-providers-google \
-                --upgrade
+                apache-airflow-providers-google
               {{- else }}
               echo "Skipping pip install (packages pre-installed in image)"
               {{- end }}
 
-              {{- if .Values.airflow.jobRunner.enabled }}
-              # Install kubectl for Kubernetes Job execution (into shared-tools which is writable)
-              echo "Installing kubectl for Job Runner..."
-              mkdir -p /shared-tools/bin
-              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
-                && chmod +x kubectl \
-                && mv kubectl /shared-tools/bin/kubectl \
-                && echo "kubectl installed: $(/shared-tools/bin/kubectl version --client 2>/dev/null | head -1)"
-              {{- end }}
-
+              # Note: kubectl is installed in initContainer (setup-starlake-tools) when jobRunner.enabled
               echo "Setting up Starlake tools in PATH..."
               # Add shared-tools/bin to PATH for starlake, gcloud, gsutil
               export PATH="/shared-tools/bin:$PATH"
@@ -373,9 +378,11 @@ spec:
             {{- if .Values.airflow.jobRunner.enabled }}
             - name: job-template
               mountPath: /etc/starlake
+            {{- if not .Values.airflow.jobRunner.useBuiltinWrapper }}
             - name: starlake-wrapper
               mountPath: /usr/local/bin/starlake-k8s
               subPath: starlake-k8s.sh
+            {{- end }}
             {{- end }}
       volumes:
         - name: shared-tools
@@ -387,10 +394,12 @@ spec:
         - name: job-template
           configMap:
             name: {{ include "starlake.fullname" . }}-job-template
+        {{- if not .Values.airflow.jobRunner.useBuiltinWrapper }}
         - name: starlake-wrapper
           configMap:
             name: {{ include "starlake.fullname" . }}-starlake-wrapper
             defaultMode: 0755
+        {{- end }}
         {{- end }}
         {{- if .Values.airflow.logs.persistence.enabled }}
         - name: logs
