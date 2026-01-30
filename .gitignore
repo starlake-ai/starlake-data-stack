@@ -9,3 +9,4 @@ logs
 pgdata
 projects
 .env
+.claude
