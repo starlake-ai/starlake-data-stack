@@ -39,7 +39,23 @@ data:
             - name: starlake
               image: "{{ .Values.airflow.jobRunner.image.repository }}:{{ .Values.airflow.jobRunner.image.tag }}"
               imagePullPolicy: {{ .Values.airflow.jobRunner.image.pullPolicy }}
-              command: ["/app/starlake.sh"]
+              # Use bash to create /incoming symlink before running starlake
+              # NOTE: Must use /bin/bash because /app/starlake.sh has #!/usr/bin/env bash
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  # Create /incoming symlink pointing to $SL_ROOT/incoming
+                  # Required because starlake projects use absolute /incoming path
+                  if [ -n "$SL_ROOT" ]; then
+                    mkdir -p "$SL_ROOT/incoming" 2>/dev/null || true
+                    ln -sf "$SL_ROOT/incoming" /incoming 2>/dev/null || true
+                    echo "- /incoming -> $SL_ROOT/incoming"
+                  fi
+                  # Execute starlake with the provided args
+                  # /app/starlake.sh is the CLI location in the starlakeai/starlake image
+                  exec /app/starlake.sh "$@"
+                - "--"
               args: __STARLAKE_ARGS__
               env:
                 - name: SL_ROOT

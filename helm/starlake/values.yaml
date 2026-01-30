@@ -126,17 +126,17 @@ airflow:
 
   image:
     # Using official Apache Airflow image
-    # For local custom image (built from Dockerfile_airflow), use:
-    #   repository: starlake-airflow
-    #   tag: local
-    #   pullPolicy: Never
+    # For local custom image built from:
+    #   - Dockerfile_airflow (Docker mode): repository: starlake-airflow, tag: local
+    #   - Dockerfile_airflow_k8s (K8s Job mode): repository: starlake-airflow-k8s, tag: local
+    # When using custom image, set installPythonPackages: false and use pullPolicy: Never
     repository: apache/airflow
     tag: "2.10.4-python3.11"
     pullPolicy: IfNotPresent
 
   # Install Python packages at startup (starlake-airflow, providers, etc.)
   # Set to false if using a custom image that already has packages installed
-  # (e.g., image built from Dockerfile_airflow)
+  # (e.g., image built from Dockerfile_airflow or Dockerfile_airflow_k8s)
   installPythonPackages: true
 
   # Secret key for Airflow webserver session signing
@@ -204,10 +204,16 @@ airflow:
   jobRunner:
     enabled: false  # Set to true to enable K8s Job execution mode
 
-    # Starlake image for Jobs (lightweight, CLI only)
+    # Use built-in wrapper from Dockerfile_airflow_k8s (recommended)
+    # When true: expects the Airflow image to have starlake-k8s built-in
+    # When false: mounts starlake-k8s wrapper script from ConfigMap
+    useBuiltinWrapper: true
+
+    # Starlake image for Jobs (must have CLI at /app/starlake/starlake)
+    # NOTE: --scheduledDate option requires starlake >= 1.5.3-SNAPSHOT
     image:
       repository: starlakeai/starlake
-      tag: "latest"
+      tag: "1.5.3-SNAPSHOT"
       pullPolicy: IfNotPresent
 
     # Resources per Job (each Starlake task gets its own pod)
@@ -220,7 +226,8 @@ airflow:
         cpu: "2000m"
 
     # Cleanup: delete Jobs after completion
-    ttlSecondsAfterFinished: 60  # 1 minute after success
+    # Increased to 300s to ensure exit code capture before TTL cleanup
+    ttlSecondsAfterFinished: 300  # 5 minutes after completion
 
     # Backoff limit for failed jobs
     backoffLimit: 0  # No retries (Airflow handles retries)
