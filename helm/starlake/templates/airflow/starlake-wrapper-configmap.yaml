@@ -101,8 +101,8 @@ data:
     echo "Namespace: ${NAMESPACE}"
     echo "SL_ROOT: ${SL_ROOT:-/projects}"
 
-    # Create the job (--validate=false to avoid openapi download issues)
-    kubectl apply -f "$TEMP_JOB" -n "$NAMESPACE" --validate=false
+    # Create the job
+    kubectl apply -f "$TEMP_JOB" -n "$NAMESPACE"
 
     # Wait for pod to be created and get its name
     echo "=== Waiting for pod to start ==="
