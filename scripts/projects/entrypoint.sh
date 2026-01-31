@@ -25,13 +25,20 @@ if [[ $member_id =~ ^[0-9]+$ ]]; then
                     project_name=$(basename "$zip" | cut -d. -f1)
                     if [ ! -d /projects/$member_id/$project_id ]; then
                         echo "Project $project_name will be created with id $project_id and UUID $project_uuid"
-                        psql -v ON_ERROR_STOP=1 -h "${POSTGRES_HOST}" -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -w <<-EOSQL
+                        # Use psql variables to prevent SQL injection
+                        # Variables: project_id (int), project_uuid (safe), project_name (user input - must be escaped), member_id (int)
+                        psql -v ON_ERROR_STOP=1 \
+                             -v p_id="$project_id" \
+                             -v p_uuid="$project_uuid" \
+                             -v p_name="$project_name" \
+                             -v m_id="$member_id" \
+                             -h "${POSTGRES_HOST}" -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -w <<-EOSQL
 INSERT INTO public.slk_project (id, code, "name", description, repository, active, deleted, created, updated, master, owner, owner_email, access, pat, airflow_role)
-OVERRIDING SYSTEM VALUE 
-VALUES($project_id, '$project_uuid', '$project_name', '$project_name', '', true, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, -1, $member_id, 'admin@localhost.local', 'ADMIN', '', 'DEV:OPS,STAGING:OPS,PROD:OPS');
+OVERRIDING SYSTEM VALUE
+VALUES(:p_id, :'p_uuid', :'p_name', :'p_name', '', true, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, -1, :m_id, 'admin@localhost.local', 'ADMIN', '', 'DEV:OPS,STAGING:OPS,PROD:OPS');
 INSERT INTO public.slk_project_props (id, project, properties, created, updated)
-OVERRIDING SYSTEM VALUE 
-VALUES($project_id, $project_id, '[{"envName":"__sl_ignore__"}]', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+OVERRIDING SYSTEM VALUE
+VALUES(:p_id, :p_id, '[{"envName":"__sl_ignore__"}]', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 EOSQL
                         echo "Move project $member_id/$project_id to target folder"
                         mkdir -p /projects/$member_id/$project_id
@@ -59,5 +66,6 @@ EOSQL
     echo "All projects have been unzipped"
     echo "You can now access Starlake at http://localhost:${SL_UI_PORT:-80}"
 else
+    echo "ERROR: Could not find admin member (admin@localhost.local) in database. Is the database initialized?"
     exit 1
 fi
