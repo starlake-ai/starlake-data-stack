@@ -83,7 +83,7 @@ ui:
   # Service configuration
   # UI is now the main entry point (proxy merged into UI in docker-compose)
   service:
-    type: LoadBalancer  # Change to NodePort or ClusterIP if using Ingress
+    type: ClusterIP  # Use Ingress for external access (safer than LoadBalancer)
     port: 80            # External port (maps to internal 9900)
     targetPort: 9900    # Internal container port
 
@@ -104,13 +104,23 @@ ui:
     host: smtp.sendgrid.net
     port: 587
     user: apikey
-    password: ""
+    password: ""  # Stored in Secret, not visible in deployment
     from: contact@starlake.ai
+
+  # Documentation access credentials
+  docs:
+    user: starlake
+    password: ""  # Set a secure password, stored in Secret
 
   # File upload configuration
   fileUpload:
     maxContentLength: 21474836480  # 20 GB
     maxUserSpaceMB: 0  # 0 = unlimited
+
+  # Security context for UI container (runs as non-root)
+  securityContext:
+    runAsUser: 1000
+    runAsNonRoot: true
 
   # Frontend URL override for port-forward scenarios
   # If empty, uses auto-detected URL based on ingress/service config
@@ -256,7 +266,8 @@ agent:
     port: 8000
 
   # Application key for API authentication
-  applicationKey: Starlake7157
+  # SECURITY: Change this value in production!
+  applicationKey: "change-me-in-production"
 
 # Gizmo (Optional - SQL on-demand service)
 gizmo:
@@ -410,9 +421,10 @@ tolerations: []
 # Affinity
 affinity: {}
 
-# Network Policy
+# Network Policy - enabled by default for security
+# Restricts pod communication to only what's necessary
 networkPolicy:
-  enabled: false
+  enabled: true
   policyTypes:
     - Ingress
     - Egress
