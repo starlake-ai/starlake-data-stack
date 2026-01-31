@@ -56,6 +56,7 @@ generate_secure_credentials() {
     SECURE_AIRFLOW_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 24)
     SECURE_AIRFLOW_SECRET_KEY=$(openssl rand -hex 32)
     SECURE_GIZMO_API_KEY=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || openssl rand -hex 16)
+    SECURE_AGENT_KEY=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 32)
 }
 
 # Credentials à utiliser
@@ -65,6 +66,7 @@ if [ "$PRODUCTION_MODE" = true ]; then
     AIRFLOW_PASSWORD="$SECURE_AIRFLOW_PASSWORD"
     AIRFLOW_SECRET_KEY="$SECURE_AIRFLOW_SECRET_KEY"
     GIZMO_API_KEY="$SECURE_GIZMO_API_KEY"
+    AGENT_APPLICATION_KEY="$SECURE_AGENT_KEY"
     VALIDATE_CREDENTIALS="true"
 else
     # Mode dev - credentials par défaut
@@ -72,6 +74,7 @@ else
     AIRFLOW_PASSWORD="airflow"
     AIRFLOW_SECRET_KEY="starlake-airflow-secret-key-change-in-production"
     GIZMO_API_KEY="a_secret_api_key"
+    AGENT_APPLICATION_KEY="change-me-in-production"
     VALIDATE_CREDENTIALS="false"
 fi
 
@@ -167,6 +170,7 @@ if [ "$PRODUCTION_MODE" = true ]; then
     log_info "PostgreSQL password: ${PG_PASSWORD:0:8}..."
     log_info "Airflow password: ${AIRFLOW_PASSWORD:0:8}..."
     log_info "Airflow secret key: ${AIRFLOW_SECRET_KEY:0:16}..."
+    log_info "Agent application key: ${AGENT_APPLICATION_KEY:0:8}..."
     log_info "security.validateCredentials: true"
     echo ""
 else
@@ -205,6 +209,7 @@ SECURITY_TEST_OUTPUT=$(helm template test-security $CHART_PATH \
     --set airflow.admin.password=SecureAirflowPass456 \
     --set airflow.secretKey="$(openssl rand -hex 32)" \
     --set gizmo.enabled=false \
+    --set agent.applicationKey=SecureAgentKey123 \
     2>&1) && SECURITY_TEST_RESULT=$? || SECURITY_TEST_RESULT=$?
 
 if [ $SECURITY_TEST_RESULT -eq 0 ]; then
@@ -574,6 +579,7 @@ CREDENTIAL_OPTS="$CREDENTIAL_OPTS --set postgresql.credentials.password=$PG_PASS
 CREDENTIAL_OPTS="$CREDENTIAL_OPTS --set airflow.admin.password=$AIRFLOW_PASSWORD"
 CREDENTIAL_OPTS="$CREDENTIAL_OPTS --set airflow.secretKey=$AIRFLOW_SECRET_KEY"
 CREDENTIAL_OPTS="$CREDENTIAL_OPTS --set gizmo.apiKey=$GIZMO_API_KEY"
+CREDENTIAL_OPTS="$CREDENTIAL_OPTS --set agent.applicationKey=$AGENT_APPLICATION_KEY"
 CREDENTIAL_OPTS="$CREDENTIAL_OPTS --set security.validateCredentials=$VALIDATE_CREDENTIALS"
 
 log_info "  Credentials: $([ "$PRODUCTION_MODE" = true ] && echo "sécurisés (mode production)" || echo "par défaut (mode dev)")"
