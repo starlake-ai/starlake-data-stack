@@ -4,6 +4,11 @@
 # IMPORTANT: Ce script crée un cluster K3s single-node pour contourner
 # la limitation du storage local-path (RWO) qui ne supporte pas le multi-attach.
 #
+# Usage:
+#   ./test-helm-chart.sh              # Mode dev (credentials par défaut)
+#   ./test-helm-chart.sh --production # Mode production (credentials sécurisés, validation activée)
+#   ./test-helm-chart.sh --security-only # Test validation sécurité seulement (pas de cluster)
+#
 # Prérequis:
 #   - k3d (brew install k3d)
 #   - helm (brew install helm)
@@ -21,6 +26,54 @@ CLUSTER_NAME="starlake-test"
 NAMESPACE="starlake"
 CHART_PATH="./starlake"
 TIMEOUT="15m"
+
+# Mode de test (dev par défaut)
+PRODUCTION_MODE=false
+SECURITY_ONLY=false
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --production|-p)
+            PRODUCTION_MODE=true
+            shift
+            ;;
+        --security-only|-s)
+            SECURITY_ONLY=true
+            shift
+            ;;
+        *)
+            echo "Usage: $0 [--production|-p] [--security-only|-s]"
+            exit 1
+            ;;
+    esac
+done
+
+# Génération de credentials sécurisés pour le mode production
+generate_secure_credentials() {
+    # Générer des mots de passe aléatoires
+    SECURE_PG_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 24)
+    SECURE_AIRFLOW_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 24)
+    SECURE_AIRFLOW_SECRET_KEY=$(openssl rand -hex 32)
+    SECURE_GIZMO_API_KEY=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || openssl rand -hex 16)
+}
+
+# Credentials à utiliser
+if [ "$PRODUCTION_MODE" = true ]; then
+    generate_secure_credentials
+    PG_PASSWORD="$SECURE_PG_PASSWORD"
+    AIRFLOW_PASSWORD="$SECURE_AIRFLOW_PASSWORD"
+    AIRFLOW_SECRET_KEY="$SECURE_AIRFLOW_SECRET_KEY"
+    GIZMO_API_KEY="$SECURE_GIZMO_API_KEY"
+    VALIDATE_CREDENTIALS="true"
+else
+    # Mode dev - credentials par défaut
+    PG_PASSWORD="dbuser123"
+    AIRFLOW_PASSWORD="airflow"
+    AIRFLOW_SECRET_KEY="starlake-airflow-secret-key-change-in-production"
+    GIZMO_API_KEY="a_secret_api_key"
+    VALIDATE_CREDENTIALS="false"
+fi
 
 # Timeouts configurables (en secondes)
 CLUSTER_READY_TIMEOUT=120      # Attente cluster ready
@@ -102,6 +155,117 @@ if [ ! -d "$CHART_PATH" ]; then
     exit 1
 fi
 log_success "Chart trouvé: $CHART_PATH"
+
+echo ""
+
+# Afficher le mode de test
+if [ "$PRODUCTION_MODE" = true ]; then
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  🔒 MODE PRODUCTION - Credentials sécurisés"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    log_info "PostgreSQL password: ${PG_PASSWORD:0:8}..."
+    log_info "Airflow password: ${AIRFLOW_PASSWORD:0:8}..."
+    log_info "Airflow secret key: ${AIRFLOW_SECRET_KEY:0:16}..."
+    log_info "security.validateCredentials: true"
+    echo ""
+else
+    log_info "Mode DEV - credentials par défaut (airflow/airflow, dbuser123)"
+fi
+
+# 0.5. Test de validation sécurité (helm template)
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  🔐 Test de Validation Sécurité"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+# Test 1: Validation doit ÉCHOUER avec credentials par défaut + validateCredentials=true
+log_info "Test 1: Validation bloque les credentials par défaut..."
+SECURITY_TEST_OUTPUT=$(helm template test-security $CHART_PATH \
+    --set security.validateCredentials=true \
+    --set postgresql.credentials.password=dbuser123 \
+    --set airflow.admin.password=airflow \
+    --set airflow.secretKey="starlake-airflow-secret-key-change-in-production" \
+    2>&1) && SECURITY_TEST_RESULT=$? || SECURITY_TEST_RESULT=$?
+
+if [ $SECURITY_TEST_RESULT -ne 0 ] && echo "$SECURITY_TEST_OUTPUT" | grep -q "SECURITY ERROR"; then
+    log_success "  ✓ Validation bloque correctement les credentials par défaut"
+else
+    log_error "  ✗ Validation devrait bloquer les credentials par défaut!"
+    echo "$SECURITY_TEST_OUTPUT" | head -5
+    if [ "$SECURITY_ONLY" = true ]; then exit 1; fi
+fi
+
+# Test 2: Validation doit RÉUSSIR avec credentials sécurisés
+log_info "Test 2: Validation accepte les credentials sécurisés..."
+SECURITY_TEST_OUTPUT=$(helm template test-security $CHART_PATH \
+    --set security.validateCredentials=true \
+    --set postgresql.credentials.password=SecurePassword123 \
+    --set airflow.admin.password=SecureAirflowPass456 \
+    --set airflow.secretKey="$(openssl rand -hex 32)" \
+    --set gizmo.enabled=false \
+    2>&1) && SECURITY_TEST_RESULT=$? || SECURITY_TEST_RESULT=$?
+
+if [ $SECURITY_TEST_RESULT -eq 0 ]; then
+    log_success "  ✓ Validation accepte les credentials sécurisés"
+else
+    log_error "  ✗ Validation devrait accepter les credentials sécurisés!"
+    echo "$SECURITY_TEST_OUTPUT" | head -10
+    if [ "$SECURITY_ONLY" = true ]; then exit 1; fi
+fi
+
+# Test 3: Validation PostgreSQL password spécifique
+log_info "Test 3: Validation bloque postgresql.credentials.password=dbuser123..."
+SECURITY_TEST_OUTPUT=$(helm template test-security $CHART_PATH \
+    --set security.validateCredentials=true \
+    --set postgresql.credentials.password=dbuser123 \
+    --set airflow.admin.password=SecurePass \
+    --set airflow.secretKey="$(openssl rand -hex 32)" \
+    2>&1) && SECURITY_TEST_RESULT=$? || SECURITY_TEST_RESULT=$?
+
+if [ $SECURITY_TEST_RESULT -ne 0 ] && echo "$SECURITY_TEST_OUTPUT" | grep -q "postgresql.credentials.password"; then
+    log_success "  ✓ Validation bloque postgresql password par défaut"
+else
+    log_error "  ✗ Validation devrait bloquer postgresql password par défaut!"
+fi
+
+# Test 4: Vérifier que les Secrets sont créés correctement
+log_info "Test 4: Vérification création des Secrets Kubernetes..."
+SECRETS_OUTPUT=$(helm template test-secrets $CHART_PATH \
+    --set airflow.enabled=true \
+    2>&1)
+
+if echo "$SECRETS_OUTPUT" | grep -q "kind: Secret" && \
+   echo "$SECRETS_OUTPUT" | grep -q "starlake-airflow" && \
+   echo "$SECRETS_OUTPUT" | grep -q "admin-password" && \
+   echo "$SECRETS_OUTPUT" | grep -q "secret-key"; then
+    log_success "  ✓ Secret Airflow créé avec admin-password et secret-key"
+else
+    log_error "  ✗ Secret Airflow mal configuré!"
+fi
+
+# Test 5: Vérifier que le deployment utilise secretKeyRef
+log_info "Test 5: Vérification utilisation secretKeyRef dans deployment..."
+if echo "$SECRETS_OUTPUT" | grep -q "secretKeyRef" && \
+   echo "$SECRETS_OUTPUT" | grep -q "AIRFLOW_ADMIN_PASSWORD"; then
+    log_success "  ✓ Deployment utilise secretKeyRef pour le password"
+else
+    log_error "  ✗ Deployment devrait utiliser secretKeyRef!"
+fi
+
+echo ""
+log_success "Tests de validation sécurité terminés!"
+echo ""
+
+# Si --security-only, on s'arrête ici
+if [ "$SECURITY_ONLY" = true ]; then
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  ✅ Tests de sécurité terminés (--security-only)"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    trap - EXIT  # Désactiver cleanup
+    exit 0
+fi
 
 echo ""
 
@@ -403,6 +567,18 @@ log_info "  Note: Les images Starlake nécessitent ~2-3 minutes pour démarrer"
 # Installation avec les paramètres optimisés pour K3s
 # Note: --wait=false car les init jobs prennent du temps (airflow db init, demo data load)
 # La boucle de surveillance ci-dessous attend que les pods soient prêts
+
+# Préparer les options de credentials
+CREDENTIAL_OPTS=""
+CREDENTIAL_OPTS="$CREDENTIAL_OPTS --set postgresql.credentials.password=$PG_PASSWORD"
+CREDENTIAL_OPTS="$CREDENTIAL_OPTS --set airflow.admin.password=$AIRFLOW_PASSWORD"
+CREDENTIAL_OPTS="$CREDENTIAL_OPTS --set airflow.secretKey=$AIRFLOW_SECRET_KEY"
+CREDENTIAL_OPTS="$CREDENTIAL_OPTS --set gizmo.apiKey=$GIZMO_API_KEY"
+CREDENTIAL_OPTS="$CREDENTIAL_OPTS --set security.validateCredentials=$VALIDATE_CREDENTIALS"
+
+log_info "  Credentials: $([ "$PRODUCTION_MODE" = true ] && echo "sécurisés (mode production)" || echo "par défaut (mode dev)")"
+log_info "  Validation: $VALIDATE_CREDENTIALS"
+
 helm install starlake $CHART_PATH \
     --namespace $NAMESPACE \
     --create-namespace \
@@ -426,6 +602,7 @@ helm install starlake $CHART_PATH \
     --set ui.frontendUrl=http://localhost:8080 \
     --set airflow.baseUrl=http://localhost:8080/airflow \
     --set airflow.jobRunner.enabled=true \
+    $CREDENTIAL_OPTS \
     $LOCAL_IMAGE_OPTS || {
         log_error "Installation du chart a échoué"
         exit 1
@@ -783,7 +960,14 @@ echo "  Airflow:      http://localhost:8080/airflow (via UI proxy)"
 echo "  Agent:        http://localhost:8000"
 echo "  Gizmo:        http://localhost:10900"
 echo ""
-echo "  Credentials Airflow: airflow / airflow"
+if [ "$PRODUCTION_MODE" = true ]; then
+    echo "  🔒 Mode Production - Credentials sécurisés:"
+    echo "  Airflow: airflow / $AIRFLOW_PASSWORD"
+    echo "  PostgreSQL: dbuser / $PG_PASSWORD"
+else
+    echo "  Credentials Airflow: airflow / airflow"
+    echo "  Credentials PostgreSQL: dbuser / dbuser123"
+fi
 echo ""
 
 log_info "Pour voir les logs:"
