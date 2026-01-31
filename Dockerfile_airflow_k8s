@@ -17,14 +17,19 @@ FROM apache/airflow:2.11.0
 USER root
 
 # Install NFS client utilities and kubectl for K8s Job creation
+# kubectl is downloaded with SHA256 checksum verification for supply chain security
 RUN apt-get update \
     && apt-get install -y nfs-common \
     mandoc \
     less \
     curl \
-    && curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
+    && KUBECTL_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt) \
+    && curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+    && curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256" \
+    && echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check \
     && chmod +x kubectl \
     && mv kubectl /usr/local/bin/kubectl \
+    && rm kubectl.sha256 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
