@@ -73,10 +73,18 @@ USER airflow
 # Install aws cli
 RUN pip install --no-cache-dir -U awscli
 
-# Configure aws cli
-RUN mkdir -p /home/airflow/.aws
-COPY conf/aws/credentials /home/airflow/.aws/credentials
-COPY conf/aws/config /home/airflow/.aws/config
+# NOTE: AWS credentials should NOT be baked into the image.
+# For Kubernetes: Use IRSA (EKS), Workload Identity (GKE), or mount credentials via K8s Secret.
+# Example K8s Secret mount in Helm values.yaml:
+#   airflow:
+#     extraVolumes:
+#       - name: aws-credentials
+#         secret:
+#           secretName: aws-credentials
+#     extraVolumeMounts:
+#       - name: aws-credentials
+#         mountPath: /home/airflow/.aws
+#         readOnly: true
 
 # Install airflow amazon and google providers
 RUN pip install --no-cache-dir \
