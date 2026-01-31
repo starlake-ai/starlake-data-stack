@@ -5,9 +5,9 @@ docker/airflow/logs
 docker/minio/data
 minio/minio
 minio/data
-./logs
-./pgdata
-./projects
+logs
+pgdata
+projects
 .env
 .claude
 .idea
