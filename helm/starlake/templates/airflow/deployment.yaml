@@ -190,13 +190,22 @@ spec:
                 --lastname {{ .Values.airflow.admin.lastname }} \
                 --role Admin \
                 --email {{ .Values.airflow.admin.email }} \
-                --password {{ .Values.airflow.admin.password }} || echo "User already exists"
+                --password "$AIRFLOW_ADMIN_PASSWORD" || echo "User already exists"
               echo "Airflow database initialization complete!"
           env:
+            # Admin password from Secret (not visible in kubectl describe)
+            - name: AIRFLOW_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "starlake.fullname" . }}-airflow
+                  key: admin-password
             - name: AIRFLOW__CORE__EXECUTOR
               value: {{ .Values.airflow.executor | quote }}
             - name: AIRFLOW__WEBSERVER__SECRET_KEY
-              value: {{ .Values.airflow.secretKey | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "starlake.fullname" . }}-airflow
+                  key: secret-key
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -262,7 +271,10 @@ spec:
               value: {{ .Values.airflow.executor | quote }}
             # Secret key must be the same across all Airflow components
             - name: AIRFLOW__WEBSERVER__SECRET_KEY
-              value: {{ .Values.airflow.secretKey | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "starlake.fullname" . }}-airflow
+                  key: secret-key
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
