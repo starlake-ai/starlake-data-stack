@@ -268,5 +268,11 @@ Recommended for production deployments to enforce secure credentials
       {{- fail "SECURITY ERROR: gizmo.apiKey is set to default value. For production, set a secure API key." }}
     {{- end }}
   {{- end }}
+  {{- /* Agent applicationKey validation */ -}}
+  {{- if .Values.agent.enabled }}
+    {{- if or (eq .Values.agent.applicationKey "change-me-in-production") (eq .Values.agent.applicationKey "Starlake7157") }}
+      {{- fail "SECURITY ERROR: agent.applicationKey is set to default value. For production, set a secure application key." }}
+    {{- end }}
+  {{- end }}
 {{- end }}
 {{- end -}}
