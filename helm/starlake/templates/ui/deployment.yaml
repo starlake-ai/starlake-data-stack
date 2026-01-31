@@ -51,28 +51,40 @@ spec:
         volumeMounts:
         - name: tmp
           mountPath: /tmp
+      # Fix permissions on shared volumes - runs as root before main container
+      - name: fix-permissions
+        image: busybox:1.35
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          runAsUser: 0
+          runAsNonRoot: false
+        command:
+          - sh
+          - -c
+          - |
+            echo "Fixing permissions on /projects for group {{ .Values.podSecurityContext.fsGroup }}..."
+            # Change group ownership to fsGroup
+            chgrp -R {{ .Values.podSecurityContext.fsGroup }} /projects 2>/dev/null || true
+            # Set group read/write for all files
+            chmod -R g+rwX /projects 2>/dev/null || true
+            # DuckDB stored_secrets: remove group write (contains unencrypted credentials)
+            find /projects -type d -name "stored_secrets" -exec chmod -R g-w {} \; 2>/dev/null || true
+            echo "Permissions fixed!"
+        volumeMounts:
+        - name: projects
+          mountPath: /projects
       containers:
       - name: ui
         image: "{{ .Values.ui.image.repository }}:{{ .Values.ui.image.tag }}"
         imagePullPolicy: {{ .Values.ui.image.pullPolicy }}
-        # Note: UI needs root privileges for volume operations
+        # Note: UI image requires root (runs chmod in /app/run-api.sh)
+        # TODO: Update upstream image to support non-root execution
         command:
           - /bin/bash
           - -c
           - |
             # Set umask to allow group write on new files
             umask 002
-
-            # Fix permissions on existing files - differentiated for security
-            echo "Fixing permissions on /projects for group {{ .Values.podSecurityContext.fsGroup }}..."
-            chgrp -R {{ .Values.podSecurityContext.fsGroup }} /projects 2>/dev/null || true
-
-            # Default: group read/write for all files
-            chmod -R g+rwX /projects 2>/dev/null || true
-
-            # DuckDB stored_secrets: remove group write (contains unencrypted credentials)
-            find /projects -type d -name "stored_secrets" -exec chmod -R g-w {} \; 2>/dev/null || true
-
             echo "Starting Starlake UI..."
             exec /app/run-api.sh
         ports:
@@ -188,7 +200,10 @@ spec:
         - name: SL_API_MAIL_USER
           value: {{ .Values.ui.mail.user | quote }}
         - name: SL_API_MAIL_PASSWORD
-          value: {{ .Values.ui.mail.password | quote }}
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "starlake.fullname" . }}-ui
+              key: mail-password
         - name: SL_API_MAIL_FROM
           value: {{ .Values.ui.mail.from | quote }}
         {{- end }}
@@ -199,11 +214,14 @@ spec:
         - name: SL_API_UI_FOLDER
           value: /app/ui
         - name: SL_API_DOCS_USERS
-          value: starlake
+          value: {{ .Values.ui.docs.user | default "starlake" | quote }}
         - name: SL_API_DOCS_USER
-          value: starlake
+          value: {{ .Values.ui.docs.user | default "starlake" | quote }}
         - name: SL_API_DOCS_PASSWORD
-          value: s3cret.Paw
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "starlake.fullname" . }}-ui
+              key: docs-password
         {{- with .Values.ui.env }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
