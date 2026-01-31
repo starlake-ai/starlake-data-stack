@@ -416,3 +416,14 @@ networkPolicy:
   policyTypes:
     - Ingress
     - Egress
+
+# Security settings
+security:
+  # Enable credential validation to block deployment with insecure defaults
+  # When true, deployment will fail if default credentials are used:
+  # - postgresql.credentials.password: "dbuser123"
+  # - airflow.admin.password: "airflow"
+  # - airflow.secretKey: default value
+  # - gizmo.apiKey: "a_secret_api_key"
+  # RECOMMENDED: Set to true for production deployments
+  validateCredentials: false

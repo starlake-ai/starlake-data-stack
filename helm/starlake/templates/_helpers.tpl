@@ -235,3 +235,38 @@ Wait for PostgreSQL init container
       done
       echo "PostgreSQL is ready!"
 {{- end -}}
+
+{{/*
+Validate credentials - fails deployment if insecure defaults are used in production
+Enable this validation with: security.validateCredentials: true
+Recommended for production deployments to enforce secure credentials
+*/}}
+{{- define "starlake.validateCredentials" -}}
+{{- if .Values.security.validateCredentials }}
+  {{- /* PostgreSQL password validation */ -}}
+  {{- if not .Values.postgresql.credentials.existingSecret }}
+    {{- if eq .Values.postgresql.credentials.password "dbuser123" }}
+      {{- fail "SECURITY ERROR: postgresql.credentials.password is set to default value 'dbuser123'. For production, set a secure password or use existingSecret." }}
+    {{- end }}
+    {{- if not .Values.postgresql.credentials.password }}
+      {{- fail "SECURITY ERROR: postgresql.credentials.password is required. Set a secure password or use existingSecret." }}
+    {{- end }}
+  {{- end }}
+  {{- /* Airflow admin password validation */ -}}
+  {{- if .Values.airflow.enabled }}
+    {{- if eq .Values.airflow.admin.password "airflow" }}
+      {{- fail "SECURITY ERROR: airflow.admin.password is set to default value 'airflow'. For production, set a secure password." }}
+    {{- end }}
+    {{- /* Airflow secretKey validation */ -}}
+    {{- if eq .Values.airflow.secretKey "starlake-airflow-secret-key-change-in-production" }}
+      {{- fail "SECURITY ERROR: airflow.secretKey is set to default value. For production, generate a new key: python -c \"import secrets; print(secrets.token_hex(32))\"" }}
+    {{- end }}
+  {{- end }}
+  {{- /* Gizmo credentials validation */ -}}
+  {{- if .Values.gizmo.enabled }}
+    {{- if eq .Values.gizmo.apiKey "a_secret_api_key" }}
+      {{- fail "SECURITY ERROR: gizmo.apiKey is set to default value. For production, set a secure API key." }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- end -}}
