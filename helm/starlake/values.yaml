@@ -281,6 +281,19 @@ gizmo:
 
   replicas: 1
 
+  # Expose SQL ports 11900-12000 on host network
+  # Required for external clients (DBeaver, etc.) to connect to Gizmo SQL instances
+  # Note: With hostNetwork=true, only 1 replica per node is allowed (port conflict)
+  # For production multi-replica setup, use Gateway API instead (see docs/GIZMO_GATEWAY_API_STUDY.md)
+  hostNetwork: true
+
+  # Node selector for Gizmo pod (optional)
+  # In K3d multi-node: use node-role.kubernetes.io/master: "true" to schedule on server node
+  # This ensures ports are accessible via K3d port mapping
+  nodeSelector: {}
+  # nodeSelector:
+  #   node-role.kubernetes.io/master: "true"
+
   resources:
     requests:
       memory: "512Mi"
