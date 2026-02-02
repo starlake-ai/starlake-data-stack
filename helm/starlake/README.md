@@ -546,6 +546,40 @@ kubectl logs -n starlake -l app.kubernetes.io/component=postgresql -f
 
 </details>
 
+## Known Limitations
+
+### Multi-Node K3d Clusters with local-path Storage
+
+When testing with K3d in a multi-node configuration, the `local-path` storage class has significant limitations:
+
+**The Problem:**
+- `local-path` creates PersistentVolumes with node affinity (the PV is bound to the node where it was first used)
+- If a PVC is created on `agent-0`, only pods scheduled on that node can access the volume
+- K3d port mapping (e.g., `--port "11900:11900@server:0"`) only forwards traffic to the server node
+- Services using `hostNetwork: true` (like Gizmo) must run on the node where ports are mapped
+- **Conflict**: Gizmo cannot use `nodeSelector` to run on the server node because the PVC is bound to a different agent node
+
+**Solutions:**
+
+1. **Single-node cluster (recommended for local testing)**:
+   ```bash
+   k3d cluster create starlake-test --servers 1 --agents 0 --port "8080:80@loadbalancer"
+   ```
+
+2. **Use port-forward for Gizmo in multi-node clusters**:
+   ```bash
+   kubectl port-forward deploy/starlake-gizmo 11900:11900 -n starlake
+   ```
+
+3. **Use RWX storage for production**: EFS (AWS), Filestore (GCP), Azure Files, or NFS provisioner
+
+**Gizmo JDBC Connection:**
+```
+jdbc:arrow-flight-sql://localhost:11900?useEncryption=true&disableCertificateVerification=true
+```
+- User: `gizmosql_user`
+- Password: `gizmosql_password`
+
 ## Roadmap
 
 The following features are planned but not yet tested in production:

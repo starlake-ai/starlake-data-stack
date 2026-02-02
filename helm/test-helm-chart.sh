@@ -1,12 +1,15 @@
 #!/bin/bash
 # Script de test automatisé du Helm Chart Starlake avec K3s
 #
-# IMPORTANT: Ce script crée un cluster K3s single-node pour contourner
-# la limitation du storage local-path (RWO) qui ne supporte pas le multi-attach.
+# Ce script supporte deux modes de cluster:
+#   - Single-node (défaut): Utilise local-path storage (RWO)
+#   - Multi-node: Cluster avec agents, local-path storage (avec limitations)
 #
 # Usage:
-#   ./test-helm-chart.sh              # Mode dev (credentials par défaut)
+#   ./test-helm-chart.sh              # Mode dev single-node (credentials par défaut)
 #   ./test-helm-chart.sh --production # Mode production (credentials sécurisés, validation activée)
+#   ./test-helm-chart.sh --multi-node # Mode multi-nœuds (1 server + 3 agents)
+#   ./test-helm-chart.sh --multi-node --production # Multi-nœuds + credentials sécurisés
 #   ./test-helm-chart.sh --security-only # Test validation sécurité seulement (pas de cluster)
 #
 # Prérequis:
@@ -30,6 +33,8 @@ TIMEOUT="15m"
 # Mode de test (dev par défaut)
 PRODUCTION_MODE=false
 SECURITY_ONLY=false
+MULTI_NODE=false
+AGENT_COUNT=3  # Nombre d'agents pour multi-node
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -42,8 +47,16 @@ while [[ $# -gt 0 ]]; do
             SECURITY_ONLY=true
             shift
             ;;
+        --multi-node|-m)
+            MULTI_NODE=true
+            shift
+            ;;
+        --agents)
+            AGENT_COUNT=$2
+            shift 2
+            ;;
         *)
-            echo "Usage: $0 [--production|-p] [--security-only|-s]"
+            echo "Usage: $0 [--production|-p] [--security-only|-s] [--multi-node|-m] [--agents N]"
             exit 1
             ;;
     esac
@@ -162,11 +175,21 @@ log_success "Chart trouvé: $CHART_PATH"
 echo ""
 
 # Afficher le mode de test
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+if [ "$MULTI_NODE" = true ]; then
+    echo "  🌐 MODE MULTI-NODE - $AGENT_COUNT agents + local-path storage"
+else
+    echo "  📦 MODE SINGLE-NODE - local-path storage"
+fi
 if [ "$PRODUCTION_MODE" = true ]; then
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  🔒 MODE PRODUCTION - Credentials sécurisés"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
+    echo "  🔒 PRODUCTION - Credentials sécurisés"
+else
+    echo "  🔧 DEV - Credentials par défaut"
+fi
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+if [ "$PRODUCTION_MODE" = true ]; then
     log_info "PostgreSQL password: ${PG_PASSWORD:0:8}..."
     log_info "Airflow password: ${AIRFLOW_PASSWORD:0:8}..."
     log_info "Airflow secret key: ${AIRFLOW_SECRET_KEY:0:16}..."
@@ -275,25 +298,67 @@ fi
 
 echo ""
 
-# 1. Créer le cluster K3s (SINGLE NODE pour RWO storage)
-log_info "Création du cluster K3s '$CLUSTER_NAME' (single-node)..."
-log_info "  Note: Single-node requis car local-path ne supporte que RWO"
-log_info "  Note: Ports 11900-11920 exposés pour Gizmo SQL (hostNetwork)"
-k3d cluster create $CLUSTER_NAME \
-    --servers 1 \
-    --agents 0 \
-    --port "8080:80@loadbalancer" \
-    --port "11900-11920:11900-11920@server:0" \
-    --wait || {
-        log_error "Échec de la création du cluster"
-        exit 1
-    }
-log_success "Cluster K3s créé avec ports Gizmo SQL exposés (11900-11920)"
+# 1. Créer le cluster K3s
+if [ "$MULTI_NODE" = true ]; then
+    log_info "Création du cluster K3s '$CLUSTER_NAME' (multi-node: 1 server + $AGENT_COUNT agents)..."
+    log_info "  Note: Multi-node utilise local-path (RWX recommandé en production)"
+    log_info "  Note: Ports 11900-11920 exposés pour Gizmo SQL (hostNetwork)"
+    k3d cluster create $CLUSTER_NAME \
+        --servers 1 \
+        --agents $AGENT_COUNT \
+        --port "8080:80@loadbalancer" \
+        --port "11900-11920:11900-11920@server:0" \
+        --wait || {
+            log_error "Échec de la création du cluster"
+            exit 1
+        }
+    log_success "Cluster K3s créé: 1 server + $AGENT_COUNT agents"
+else
+    log_info "Création du cluster K3s '$CLUSTER_NAME' (single-node)..."
+    log_info "  Note: Single-node requis car local-path ne supporte que RWO"
+    log_info "  Note: Ports 11900-11920 exposés pour Gizmo SQL (hostNetwork)"
+    k3d cluster create $CLUSTER_NAME \
+        --servers 1 \
+        --agents 0 \
+        --port "8080:80@loadbalancer" \
+        --port "11900-11920:11900-11920@server:0" \
+        --wait || {
+            log_error "Échec de la création du cluster"
+            exit 1
+        }
+    log_success "Cluster K3s créé avec ports Gizmo SQL exposés (11900-11920)"
+fi
 
 # Attendre que le cluster soit prêt
 log_info "Attente que le cluster soit prêt..."
 kubectl wait --for=condition=ready node --all --timeout=${CLUSTER_READY_TIMEOUT}s
 log_success "Cluster prêt"
+
+# Afficher les nœuds
+kubectl get nodes -o wide
+
+# 1.1 Configuration du Storage Class
+# Note: Pour les tests locaux multi-node, on utilise local-path avec une limitation:
+# - Les pods partageant un PVC doivent être sur le même nœud
+# - En production, utiliser un storage RWX (EFS, Filestore, Azure Files, NFS externe)
+if [ "$MULTI_NODE" = true ]; then
+    echo ""
+    log_info "Mode multi-node: utilisation de local-path storage"
+    log_warning "  Note: Le PVC /projects sera sur un seul nœud (limitation local-path)"
+    log_warning "  En production, utiliser un storage RWX (EFS, Filestore, Azure Files)"
+    echo ""
+
+    # Forcer les pods avec PVC partagé sur le même nœud via nodeAffinity
+    # Le premier pod à démarrer (PostgreSQL) déterminera le nœud
+    STORAGE_CLASS="local-path"
+
+    # Afficher les nœuds disponibles
+    log_info "Nœuds disponibles dans le cluster:"
+    kubectl get nodes -o wide
+    echo ""
+else
+    STORAGE_CLASS="local-path"
+fi
 
 echo ""
 
@@ -588,14 +653,33 @@ CREDENTIAL_OPTS="$CREDENTIAL_OPTS --set security.validateCredentials=$VALIDATE_C
 log_info "  Credentials: $([ "$PRODUCTION_MODE" = true ] && echo "sécurisés (mode production)" || echo "par défaut (mode dev)")"
 log_info "  Validation: $VALIDATE_CREDENTIALS"
 
+# Déterminer le storage class
+if [ -z "$STORAGE_CLASS" ]; then
+    STORAGE_CLASS="local-path"
+fi
+
+log_info "  Storage class: $STORAGE_CLASS"
+log_info "  Mode: $([ "$MULTI_NODE" = true ] && echo "multi-node ($AGENT_COUNT agents)" || echo "single-node")"
+
+# Options spécifiques multi-node
+MULTINODE_OPTS=""
+if [ "$MULTI_NODE" = true ]; then
+    # Note: En multi-node avec local-path storage, on NE PEUT PAS forcer Gizmo sur le server
+    # car le PVC a une affinité vers le nœud où il a été créé (limitation local-path)
+    # Les ports Gizmo (11900+) sont accessibles via port-forward:
+    log_warning "  Gizmo: port-forward requis en multi-node (limitation storage local-path)"
+    log_info "  Commande: kubectl port-forward deploy/starlake-gizmo 11900:11900 -n starlake"
+    # Ne pas ajouter de nodeSelector - laisser Gizmo se scheduler où le PVC est disponible
+fi
+
 helm install starlake $CHART_PATH \
     --namespace $NAMESPACE \
     --create-namespace \
     --wait=false \
     --set postgresql.internal.persistence.size=2Gi \
-    --set postgresql.internal.persistence.storageClass=local-path \
+    --set postgresql.internal.persistence.storageClass=$STORAGE_CLASS \
     --set persistence.projects.size=2Gi \
-    --set persistence.projects.storageClass=local-path \
+    --set persistence.projects.storageClass=$STORAGE_CLASS \
     --set airflow.webserver.resources.requests.memory=4Gi \
     --set airflow.webserver.resources.limits.memory=16Gi \
     --set ui.resources.requests.memory=512Mi \
@@ -612,7 +696,8 @@ helm install starlake $CHART_PATH \
     --set airflow.baseUrl=http://localhost:8080/airflow \
     --set airflow.jobRunner.enabled=true \
     $CREDENTIAL_OPTS \
-    $LOCAL_IMAGE_OPTS || {
+    $LOCAL_IMAGE_OPTS \
+    $MULTINODE_OPTS || {
         log_error "Installation du chart a échoué"
         exit 1
     }
@@ -755,6 +840,43 @@ log_info "État des services:"
 kubectl get svc -n $NAMESPACE
 
 log_success "Ressources déployées"
+
+# 5.4 Validation multi-node (si activé)
+if [ "$MULTI_NODE" = true ]; then
+    echo ""
+    log_info "=== Validation Multi-Node ==="
+
+    # Afficher la distribution des pods par nœud
+    log_info "Distribution des pods par nœud:"
+    for node in $(kubectl get nodes -o jsonpath='{.items[*].metadata.name}'); do
+        pod_count=$(kubectl get pods -n $NAMESPACE --field-selector spec.nodeName=$node --no-headers 2>/dev/null | wc -l | tr -d ' ')
+        echo "  $node: $pod_count pods"
+    done
+
+    # Compter le nombre de nœuds utilisés
+    NODES_WITH_PODS=$(kubectl get pods -n $NAMESPACE -o jsonpath='{.items[*].spec.nodeName}' | tr ' ' '\n' | sort -u | wc -l | tr -d ' ')
+    TOTAL_NODES=$(kubectl get nodes --no-headers | wc -l | tr -d ' ')
+
+    echo ""
+    log_info "Résumé: Pods distribués sur $NODES_WITH_PODS/$TOTAL_NODES nœuds"
+
+    if [ "$NODES_WITH_PODS" -gt 1 ]; then
+        log_success "✓ Distribution multi-nœuds validée"
+    else
+        log_warning "⚠ Tous les pods sont sur un seul nœud (possible si affinité ou resources limitées)"
+    fi
+
+    # Vérifier que le PVC projects est accessible (RWX)
+    log_info "Vérification du storage RWX..."
+    PVC_ACCESS_MODE=$(kubectl get pvc starlake-projects -n $NAMESPACE -o jsonpath='{.spec.accessModes[0]}' 2>/dev/null || echo "N/A")
+    if [ "$PVC_ACCESS_MODE" = "ReadWriteMany" ] || [ "$STORAGE_CLASS" = "nfs-client" ]; then
+        log_success "✓ Storage RWX configuré (StorageClass: $STORAGE_CLASS)"
+    else
+        log_info "  PVC access mode: $PVC_ACCESS_MODE (StorageClass: $STORAGE_CLASS)"
+    fi
+
+    echo ""
+fi
 
 echo ""
 
@@ -973,6 +1095,7 @@ if [ "$PRODUCTION_MODE" = true ]; then
     echo "  🔒 Mode Production - Credentials sécurisés:"
     echo "  Airflow: airflow / $AIRFLOW_PASSWORD"
     echo "  PostgreSQL: dbuser / $PG_PASSWORD"
+    echo "  Gizmo API KEY: $SECURE_GIZMO_API_KEY"
 else
     echo "  Credentials Airflow: airflow / airflow"
     echo "  Credentials PostgreSQL: dbuser / dbuser123"
