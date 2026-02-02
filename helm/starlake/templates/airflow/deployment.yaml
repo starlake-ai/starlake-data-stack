@@ -30,7 +30,8 @@ spec:
         # Most files: group read/write (g+rwX) for shared access
         # DuckDB stored_secrets: group read only (g-w) to protect credentials
         - name: fix-permissions
-          image: busybox:1.35
+          # Security fix: busybox 1.36 addresses CVE-2022-28391 (RCE vulnerability)
+          image: busybox:1.36
           imagePullPolicy: IfNotPresent
           command:
             - sh
@@ -219,7 +220,8 @@ spec:
         # Sidecar container that continuously fixes permissions on /projects
         # This is needed because Airflow subprocesses don't inherit umask from the main shell
         - name: permission-fixer
-          image: busybox:1.35
+          # Security fix: busybox 1.36 addresses CVE-2022-28391 (RCE vulnerability)
+          image: busybox:1.36
           imagePullPolicy: IfNotPresent
           command:
             - sh
