@@ -16,6 +16,13 @@ spec:
         {{- include "starlake.componentSelectorLabels" (dict "component" "gizmo" "context" .) | nindent 8 }}
     spec:
       serviceAccountName: {{ include "starlake.serviceAccountName" . }}
+      {{- if .Values.gizmo.hostNetwork }}
+      # hostNetwork exposes SQL ports 11900-12000 directly on node IP
+      # Required for users to connect to Gizmo SQL instances
+      # See: helm/docs/GIZMO_NETWORK_EXPOSURE.md
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- end }}
       # fsGroup ensures shared volume files are accessible by all pods
       securityContext:
         fsGroup: {{ .Values.podSecurityContext.fsGroup }}
