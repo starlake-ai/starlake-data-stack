@@ -9,7 +9,6 @@ logs
 pgdata
 projects
 .env
-.claude
 .idea
 *.iml
 
@@ -17,6 +16,7 @@ projects
 .DS_Store
 **/.DS_Store
 
-# Claude Code
-CLAUDE.md
-.claude/
+# Claude Code - Local only (don't track)
+*.local.md
+.claude/settings.local.json
+.claude/scripts/
