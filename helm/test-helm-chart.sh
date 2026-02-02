@@ -170,6 +170,7 @@ if [ "$PRODUCTION_MODE" = true ]; then
     log_info "PostgreSQL password: ${PG_PASSWORD:0:8}..."
     log_info "Airflow password: ${AIRFLOW_PASSWORD:0:8}..."
     log_info "Airflow secret key: ${AIRFLOW_SECRET_KEY:0:16}..."
+    log_info "Gizmo API key: ${GIZMO_API_KEY:0:8}..."
     log_info "Agent application key: ${AGENT_APPLICATION_KEY:0:8}..."
     log_info "security.validateCredentials: true"
     echo ""
@@ -277,15 +278,17 @@ echo ""
 # 1. Créer le cluster K3s (SINGLE NODE pour RWO storage)
 log_info "Création du cluster K3s '$CLUSTER_NAME' (single-node)..."
 log_info "  Note: Single-node requis car local-path ne supporte que RWO"
+log_info "  Note: Ports 11900-11920 exposés pour Gizmo SQL (hostNetwork)"
 k3d cluster create $CLUSTER_NAME \
     --servers 1 \
     --agents 0 \
     --port "8080:80@loadbalancer" \
+    --port "11900-11920:11900-11920@server:0" \
     --wait || {
         log_error "Échec de la création du cluster"
         exit 1
     }
-log_success "Cluster K3s créé"
+log_success "Cluster K3s créé avec ports Gizmo SQL exposés (11900-11920)"
 
 # Attendre que le cluster soit prêt
 log_info "Attente que le cluster soit prêt..."

@@ -12,3 +12,4 @@ projects
 .claude
 .idea
 *.iml
+helm/docs
