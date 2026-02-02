@@ -1,4 +1,5 @@
-FROM alpine:latest
+# Security fix: Pin Alpine version for reproducible builds and security tracking
+FROM alpine:3.21
 
 RUN apk add --no-cache --no-progress \
     nfs-utils \

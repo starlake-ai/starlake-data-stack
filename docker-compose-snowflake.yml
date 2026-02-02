@@ -4,7 +4,8 @@ version: '3.8'
 services:
 
   starlake-db:
-    image: postgres:17
+    # Security fix: Pin PostgreSQL to patch version for security tracking
+    image: postgres:17.2
     restart: on-failure
     container_name: starlake-db
     ports:

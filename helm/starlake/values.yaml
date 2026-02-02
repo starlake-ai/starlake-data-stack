@@ -22,7 +22,8 @@ postgresql:
     enabled: true
     image:
       repository: postgres
-      tag: "17"
+      # Security fix: Pin PostgreSQL to patch version for security tracking
+      tag: "17.2"
       pullPolicy: IfNotPresent
 
     # Resources

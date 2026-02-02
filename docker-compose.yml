@@ -134,7 +134,8 @@ services:
       - airflow3
       - dagster
       - snowflake
-    image: postgres:17
+    # Security fix: Pin PostgreSQL to patch version for security tracking
+    image: postgres:17.2
     restart: on-failure
     container_name: starlake-db
     ports:
@@ -408,7 +409,8 @@ services:
   minio:
     profiles:
       - minio
-    image: "quay.io/minio/minio:latest"
+    # Security fix: Chainguard MinIO - official quay.io/minio/minio is unmaintained since Oct 2025
+    image: "cgr.dev/chainguard/minio:latest"
     ports:
       - "${SL_MINIO_PORT:-9000}:9000"
       - "${SL_MINIO_CONSOLE_PORT:-9001}:9001"
