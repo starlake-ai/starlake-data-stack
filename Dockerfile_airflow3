@@ -51,8 +51,8 @@ RUN pip install --no-cache-dir \
     apache-airflow-providers-fab
 
 # Install SL Python libraries
-RUN pip install --no-cache-dir \
-    starlake-airflow~=0.5 docker --upgrade
+# RUN pip install --no-cache-dir \
+#    starlake-airflow~=0.5 docker --upgrade
 
 RUN docker --version
 

@@ -7,7 +7,8 @@ echo "Starting Airflow 3 Entrypoint..."
 # Install/Update Starlake Airflow
 # Removed --force-reinstall to avoid breaking pre-installed dependencies
 echo "Installing/Updating starlake-airflow..."
-python3 -m pip install --no-cache-dir starlake-airflow docker --upgrade
+# python3 -m pip install --no-cache-dir starlake-airflow docker --upgrade
+export PYTHONPATH=/opt/airflow/dags:$PYTHONPATH
 
 # Check DB Connection
 echo "Checking DB connection string..."
