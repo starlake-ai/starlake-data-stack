@@ -223,7 +223,8 @@ Wait for PostgreSQL init container
 */}}
 {{- define "starlake.waitForPostgresql" -}}
 - name: wait-for-postgresql
-  image: busybox:1.35
+  # Security fix: busybox 1.36 addresses CVE-2022-28391 (RCE vulnerability)
+  image: busybox:1.36
   imagePullPolicy: IfNotPresent
   command:
     - sh
@@ -234,6 +235,51 @@ Wait for PostgreSQL init container
         sleep 2
       done
       echo "PostgreSQL is ready!"
+{{- end -}}
+
+{{/*
+Wait for SeaweedFS S3 bucket init container
+Only included when seaweedfs.enabled is true
+Uses aws-cli to verify the bucket exists and is accessible
+*/}}
+{{- define "starlake.waitForSeaweedfs" -}}
+{{- if .Values.seaweedfs.enabled }}
+- name: wait-for-seaweedfs-bucket
+  image: amazon/aws-cli:2.15.0
+  imagePullPolicy: IfNotPresent
+  env:
+    - name: AWS_ACCESS_KEY_ID
+      value: {{ .Values.seaweedfs.s3.accessKey | quote }}
+    - name: AWS_SECRET_ACCESS_KEY
+      value: {{ .Values.seaweedfs.s3.secretKey | quote }}
+    - name: S3_ENDPOINT
+      value: "http://{{ include "starlake.fullname" . }}-seaweedfs:{{ .Values.seaweedfs.service.s3Port }}"
+    - name: BUCKET_NAME
+      value: {{ .Values.seaweedfs.s3.bucket | quote }}
+  command:
+    - /bin/sh
+    - -c
+    - |
+      echo "Waiting for SeaweedFS S3 bucket '$BUCKET_NAME' to be ready..."
+      MAX_RETRIES=60
+      RETRY_INTERVAL=5
+      RETRIES=0
+
+      while [ $RETRIES -lt $MAX_RETRIES ]; do
+        # Try to list the bucket (will fail if bucket doesn't exist or SeaweedFS not ready)
+        if aws --endpoint-url "$S3_ENDPOINT" s3 ls "s3://$BUCKET_NAME" 2>/dev/null; then
+          echo "Bucket s3://$BUCKET_NAME is ready!"
+          exit 0
+        fi
+
+        RETRIES=$((RETRIES + 1))
+        echo "Bucket not ready yet (attempt $RETRIES/$MAX_RETRIES), waiting ${RETRY_INTERVAL}s..."
+        sleep $RETRY_INTERVAL
+      done
+
+      echo "ERROR: Bucket s3://$BUCKET_NAME not available after $MAX_RETRIES attempts"
+      exit 1
+{{- end }}
 {{- end -}}
 
 {{/*

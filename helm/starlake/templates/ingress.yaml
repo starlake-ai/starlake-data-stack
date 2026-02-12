@@ -20,7 +20,9 @@ spec:
     secretName: {{ .Values.ingress.tls.secretName }}
   {{- end }}
   rules:
-  - host: {{ .Values.ingress.host }}
+  - {{- if .Values.ingress.host }}
+    host: {{ .Values.ingress.host }}
+    {{- end }}
     http:
       paths:
       # Starlake UI - Root path (UI now handles all routing, no separate proxy)

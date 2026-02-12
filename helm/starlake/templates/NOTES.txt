@@ -16,8 +16,8 @@
 {{ if .Values.gizmo.enabled -}}
 ✅ Gizmo: Enabled
 {{- end }}
-{{ if .Values.minio.enabled -}}
-✅ MinIO: Enabled
+{{ if .Values.seaweedfs.enabled -}}
+✅ SeaweedFS: Enabled (S3 API on port {{ .Values.seaweedfs.service.s3Port }})
 {{- end }}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
