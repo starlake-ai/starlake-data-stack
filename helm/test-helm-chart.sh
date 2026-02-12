@@ -18,7 +18,7 @@
 #   - helm (brew install helm)
 #   - kubectl (inclus avec k3d)
 
-set -e
+set -euo pipefail
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
