@@ -21,6 +21,7 @@ spec:
         fsGroup: {{ .Values.podSecurityContext.fsGroup }}
       initContainers:
         {{- include "starlake.waitForPostgresql" . | nindent 8 }}
+        {{- include "starlake.waitForSeaweedfs" . | nindent 8 }}
       containers:
       - name: agent
         image: "{{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}"
@@ -39,6 +40,25 @@ spec:
           value: {{ .Values.agent.applicationKey | quote }}
         - name: SL_ASK_STARLAKE_JSON_FOLDER
           value: /app/starlake_ask/resources
+        # Storage Mode - ALWAYS local filesystem, even with SeaweedFS enabled
+        # SeaweedFS is provisioned as infrastructure but not used by default
+        # Users create S3 projects manually via UI when needed
+        - name: SL_ROOT
+          value: "/projects"
+        {{- if .Values.seaweedfs.enabled }}
+        # S3 credentials available for manual project creation in UI
+        # These are NOT used by default - only when user creates S3-backed projects
+        - name: AWS_ACCESS_KEY_ID
+          value: {{ .Values.seaweedfs.s3.accessKey | quote }}
+        - name: AWS_SECRET_ACCESS_KEY
+          value: {{ .Values.seaweedfs.s3.secretKey | quote }}
+        - name: AWS_S3_ENDPOINT
+          value: "http://{{ include "starlake.fullname" . }}-seaweedfs:{{ .Values.seaweedfs.service.s3Port }}"
+        - name: AWS_REGION
+          value: "us-east-1"
+        - name: HADOOP_CONF_DIR
+          value: "/etc/hadoop/conf"
+        {{- end }}
         - name: SL_ASK_PG_USER
           valueFrom:
             secretKeyRef:
@@ -94,6 +114,17 @@ spec:
           failureThreshold: 3
         resources:
           {{- toYaml .Values.agent.resources | nindent 10 }}
+        {{- if .Values.seaweedfs.enabled }}
+        volumeMounts:
+        - name: hadoop-config
+          mountPath: /etc/hadoop/conf
+        {{- end }}
+      {{- if .Values.seaweedfs.enabled }}
+      volumes:
+      - name: hadoop-config
+        configMap:
+          name: {{ include "starlake.fullname" . }}-hadoop-config
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

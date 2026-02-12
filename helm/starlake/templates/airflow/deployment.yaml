@@ -26,9 +26,12 @@ spec:
         fsGroup: {{ .Values.podSecurityContext.fsGroup }}
       initContainers:
         {{- include "starlake.waitForPostgresql" . | nindent 8 }}
+        {{- include "starlake.waitForSeaweedfs" . | nindent 8 }}
+        {{- if not .Values.seaweedfs.enabled }}
         # Fix permissions on existing files - differentiated for security
         # Most files: group read/write (g+rwX) for shared access
         # DuckDB stored_secrets: group read only (g-w) to protect credentials
+        # Skip when SeaweedFS is enabled (data stored in S3, no local PVC)
         - name: fix-permissions
           # Security fix: busybox 1.36 addresses CVE-2022-28391 (RCE vulnerability)
           image: busybox:1.36
@@ -58,6 +61,7 @@ spec:
           volumeMounts:
             - name: projects
               mountPath: /projects
+        {{- end }}
         {{- if .Values.airflow.installPythonPackages }}
         # Copy Starlake CLI from UI image (only needed when using official Airflow image)
         # When using custom image (Dockerfile_airflow), starlake is already installed
@@ -217,8 +221,10 @@ spec:
             - name: AIRFLOW__CORE__LOAD_EXAMPLES
               value: "false"
       containers:
+        {{- if not .Values.seaweedfs.enabled }}
         # Sidecar container that continuously fixes permissions on /projects
         # This is needed because Airflow subprocesses don't inherit umask from the main shell
+        # Skip when SeaweedFS is enabled (data stored in S3, no local PVC)
         - name: permission-fixer
           # Security fix: busybox 1.36 addresses CVE-2022-28391 (RCE vulnerability)
           image: busybox:1.36
@@ -254,6 +260,7 @@ spec:
           volumeMounts:
             - name: projects
               mountPath: /projects
+        {{- end }}
         - name: airflow
           image: "{{ .Values.airflow.image.repository }}:{{ .Values.airflow.image.tag }}"
           imagePullPolicy: {{ .Values.airflow.image.pullPolicy }}
@@ -290,6 +297,27 @@ spec:
               value: "airflow.api.auth.backend.basic_auth"
             - name: SL_HOME
               value: /app/starlake
+            # Storage Mode - ALWAYS local filesystem, even with SeaweedFS enabled
+            # SeaweedFS is provisioned as infrastructure but not used by default
+            # Users create S3 projects manually via UI when needed
+            - name: SL_FS
+              value: "file://"
+            - name: SL_ROOT
+              value: "/projects"
+            {{- if .Values.seaweedfs.enabled }}
+            # S3 credentials available for manual project creation in UI
+            # These are NOT used by default - only when user creates S3-backed projects
+            - name: AWS_ACCESS_KEY_ID
+              value: {{ .Values.seaweedfs.s3.accessKey | quote }}
+            - name: AWS_SECRET_ACCESS_KEY
+              value: {{ .Values.seaweedfs.s3.secretKey | quote }}
+            - name: AWS_S3_ENDPOINT
+              value: "http://{{ include "starlake.fullname" . }}-seaweedfs:{{ .Values.seaweedfs.service.s3Port }}"
+            - name: AWS_REGION
+              value: "us-east-1"
+            - name: HADOOP_CONF_DIR
+              value: "/etc/hadoop/conf"
+            {{- end }}
             - name: AIRFLOW__WEBSERVER__BASE_URL
               {{- if .Values.airflow.baseUrl }}
               value: {{ .Values.airflow.baseUrl | quote }}
@@ -398,10 +426,16 @@ spec:
               subPath: starlake-k8s.sh
             {{- end }}
             {{- end }}
+            {{- if .Values.seaweedfs.enabled }}
+            - name: hadoop-config
+              mountPath: /etc/hadoop/conf
+            {{- end }}
       volumes:
         - name: shared-tools
           emptyDir: {}
         - name: projects
+          # Always use PVC for local filesystem storage
+          # SeaweedFS provides S3 infrastructure but doesn't change deployment mode
           persistentVolumeClaim:
             claimName: {{ include "starlake.fullname" . }}-projects
         {{- if .Values.airflow.jobRunner.enabled }}
@@ -422,6 +456,11 @@ spec:
         {{- else }}
         - name: logs
           emptyDir: {}
+        {{- end }}
+        {{- if .Values.seaweedfs.enabled }}
+        - name: hadoop-config
+          configMap:
+            name: {{ include "starlake.fullname" . }}-hadoop-config
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
