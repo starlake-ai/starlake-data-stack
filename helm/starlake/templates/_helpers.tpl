@@ -223,8 +223,7 @@ Wait for PostgreSQL init container
 */}}
 {{- define "starlake.waitForPostgresql" -}}
 - name: wait-for-postgresql
-  # Security fix: busybox 1.36 addresses CVE-2022-28391 (RCE vulnerability)
-  image: busybox:1.36
+  image: {{ .Values.initImages.busybox.repository }}:{{ .Values.initImages.busybox.tag }}
   imagePullPolicy: IfNotPresent
   command:
     - sh
@@ -245,7 +244,7 @@ Uses aws-cli to verify the bucket exists and is accessible
 {{- define "starlake.waitForSeaweedfs" -}}
 {{- if .Values.seaweedfs.enabled }}
 - name: wait-for-seaweedfs-bucket
-  image: amazon/aws-cli:2.15.0
+  image: {{ .Values.initImages.awsCli.repository }}:{{ .Values.initImages.awsCli.tag }}
   imagePullPolicy: IfNotPresent
   env:
     - name: AWS_ACCESS_KEY_ID
@@ -318,6 +317,15 @@ Recommended for production deployments to enforce secure credentials
   {{- if .Values.agent.enabled }}
     {{- if or (eq .Values.agent.applicationKey "change-me-in-production") (eq .Values.agent.applicationKey "Starlake7157") }}
       {{- fail "SECURITY ERROR: agent.applicationKey is set to default value. For production, set a secure application key." }}
+    {{- end }}
+  {{- end }}
+  {{- /* SeaweedFS S3 credentials validation */ -}}
+  {{- if .Values.seaweedfs.enabled }}
+    {{- if eq .Values.seaweedfs.s3.accessKey "seaweedfs" }}
+      {{- fail "SECURITY ERROR: seaweedfs.s3.accessKey is set to default value 'seaweedfs'. For production, set a secure access key." }}
+    {{- end }}
+    {{- if eq .Values.seaweedfs.s3.secretKey "seaweedfs123" }}
+      {{- fail "SECURITY ERROR: seaweedfs.s3.secretKey is set to default value 'seaweedfs123'. For production, set a secure secret key." }}
     {{- end }}
   {{- end }}
 {{- end }}
