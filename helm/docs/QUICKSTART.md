@@ -6,7 +6,7 @@ Ce guide vous aide à déployer rapidement Starlake sur Kubernetes.
 
 Choisissez le scénario qui correspond à votre situation :
 
-### 1️⃣ Tests Locaux (Minikube/Kind) - 15 min
+### 1️⃣ Tests Locaux (K3d) - 15 min
 Pour tester rapidement Starlake sur votre machine.
 
 ### 2️⃣ PostgreSQL Externe (AWS RDS, GCP CloudSQL, etc.) - 30 min
@@ -17,65 +17,71 @@ Déploiement production-ready sur AWS, GCP ou Azure.
 
 ---
 
-## 1️⃣ Tests Locaux avec Minikube
+## 1️⃣ Tests Locaux avec K3d
+
+Le projet utilise **K3d** (K3s in Docker) pour les tests locaux. Un script automatisé gère tout le cycle de test.
 
 ### Prérequis
 ```bash
-# Installer Minikube
-brew install minikube  # macOS
-# ou suivre https://minikube.sigs.k8s.io/docs/start/
+# Installer K3d
+brew install k3d  # macOS
+# ou curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
 
-# Démarrer Minikube
-minikube start --cpus=4 --memory=8192
+# Docker doit être installé et démarré
+docker info
 ```
 
-### Installation du NFS Provisioner
-
-Starlake nécessite un stockage `ReadWriteMany`. Pour minikube, utilisez un NFS provisioner :
+### Test Rapide (Recommandé)
 
 ```bash
-# Ajouter le repo Helm
-helm repo add nfs-subdir-external-provisioner \
-  https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner/
+cd helm
 
-# Installer le provisioner (utilise le host local)
-helm install nfs-provisioner nfs-subdir-external-provisioner/nfs-subdir-external-provisioner \
-  --namespace kube-system \
-  --set storageClass.name=nfs-client \
-  --set storageClass.defaultClass=false
+# Test développement (single-node, credentials par défaut)
+./test-helm-chart.sh
+
+# Test production (credentials sécurisés)
+./test-helm-chart.sh --production
+
+# Test multi-node avec SeaweedFS (S3 storage)
+./test-helm-chart.sh --multi-node --seaweedfs
+
+# Validation sécurité uniquement (rapide, sans cluster)
+./test-helm-chart.sh --security-only
 ```
 
-### Déployer Starlake
-
-```bash
-# Installer Starlake avec configuration dev
-helm install starlake ./helm/starlake \
-  --namespace starlake \
-  --create-namespace \
-  --values ./helm/starlake/values-development.yaml
-```
+Le script gère automatiquement :
+- Création du cluster K3d avec ports mappés
+- Build et import des images locales
+- Déploiement Helm avec attente de readiness
+- Port-forward pour accès local
+- Cleanup à la fin
 
 ### Accéder à Starlake
 
-```bash
-# Port-forward pour accès local (UI est le point d'entrée principal)
-# L'UI proxie automatiquement /airflow vers le service Airflow interne
-kubectl port-forward svc/starlake-ui 8080:80 -n starlake
+Après `./test-helm-chart.sh`, les URLs sont affichées :
+```
+  UI:      http://localhost:8080
+  Airflow: http://localhost:8080/airflow
+  Gizmo:   http://localhost:10900
 
-# Ouvrir dans le navigateur
-open http://localhost:8080          # UI Starlake
-open http://localhost:8080/airflow  # Airflow (via proxy UI)
-
-# Credentials Airflow par défaut
-Username: airflow
-Password: airflow
+  Credentials Airflow: airflow / airflow
 ```
 
-> **Note** : L'UI agit comme reverse proxy pour Airflow. Un seul port-forward suffit pour accéder aux deux services.
+> **Note** : L'UI agit comme reverse proxy pour Airflow. Un seul port suffit pour accéder aux deux services.
+
+### Options du Script de Test
+
+| Option | Description |
+|--------|-------------|
+| `--production` | Credentials sécurisés, validation activée |
+| `--multi-node` | Cluster 1 server + N agents |
+| `--seaweedfs` | Stockage S3 (SeaweedFS) |
+| `--security-only` | Validation sécurité uniquement |
+| `--agents N` | Nombre d'agents (défaut: 3) |
 
 ### Important : Cluster Multi-Noeud et local-path Storage
 
-When using K3d with multiple nodes, `local-path` storage creates volumes bound to a specific node. This can cause issues:
+Avec K3d multi-node, `local-path` storage crée des volumes liés à un nœud spécifique :
 
 - **Single-node cluster recommended**: For local testing, use `--servers 1 --agents 0`
 - **Gizmo access in multi-node**: Use port-forward instead of hostNetwork:
