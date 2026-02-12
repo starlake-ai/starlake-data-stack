@@ -24,7 +24,7 @@ spec:
       # SeaweedFS is for user-created production projects only
       containers:
         - name: create-bucket
-          image: amazon/aws-cli:2.15.0
+          image: {{ .Values.initImages.awsCli.repository }}:{{ .Values.initImages.awsCli.tag }}
           imagePullPolicy: IfNotPresent
           env:
             - name: AWS_ACCESS_KEY_ID

@@ -6,6 +6,15 @@ global:
   # Storage class to use for all PVCs (override per component if needed)
   storageClass: ""
 
+# Utility images used by init containers and jobs
+initImages:
+  busybox:
+    repository: busybox
+    tag: "1.36"    # CVE-2022-28391 fix (upgrade from 1.35)
+  awsCli:
+    repository: amazon/aws-cli
+    tag: "2.15.0"
+
 # PostgreSQL Database Configuration
 postgresql:
   # Use external PostgreSQL database (managed service like RDS, CloudSQL, etc.)
@@ -328,6 +337,10 @@ seaweedfs:
     repository: chrislusf/seaweedfs
     tag: "3.80"
     pullPolicy: IfNotPresent
+
+  # DuckDB CLI version (installed at UI startup for S3 secret creation)
+  duckdb:
+    version: "1.1.3"
 
   # Volume size limit (MB) - max size per volume file
   volumeSizeLimitMB: 1000
