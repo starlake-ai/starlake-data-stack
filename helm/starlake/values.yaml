@@ -284,7 +284,7 @@ gizmo:
   # Expose SQL ports 11900-12000 on host network
   # Required for external clients (DBeaver, etc.) to connect to Gizmo SQL instances
   # Note: With hostNetwork=true, only 1 replica per node is allowed (port conflict)
-  # For production multi-replica setup, use Gateway API instead (see docs/GIZMO_GATEWAY_API_STUDY.md)
+  # For production multi-replica setup, use Gateway API instead
   hostNetwork: true
 
   # Node selector for Gizmo pod (optional)
@@ -319,16 +319,18 @@ gizmo:
   jwt:
     secretKey: a_very_secret_key
 
-# MinIO (Optional - Object storage)
-minio:
+# SeaweedFS (Optional - S3-compatible object storage)
+# Recommended over MinIO (MinIO in maintenance mode since Dec 2025)
+seaweedfs:
   enabled: false
 
   image:
-    repository: quay.io/minio/minio
-    tag: latest
+    repository: chrislusf/seaweedfs
+    tag: "3.80"
     pullPolicy: IfNotPresent
 
-  replicas: 1
+  # Volume size limit (MB) - max size per volume file
+  volumeSizeLimitMB: 1000
 
   resources:
     requests:
@@ -340,22 +342,26 @@ minio:
 
   service:
     type: ClusterIP
-    apiPort: 9000
-    consolePort: 9001
+    s3Port: 8333      # S3 API (main endpoint for apps)
+    masterPort: 9333  # Master coordination
+    filerPort: 8888   # Filer HTTP API
 
   persistence:
     enabled: true
     storageClass: ""
+    accessMode: ReadWriteOnce
     size: 100Gi
 
-  # Credentials
-  rootUser: minio
-  rootPassword: minio123
+  # S3 API credentials and bucket
+  s3:
+    accessKey: seaweedfs
+    secretKey: seaweedfs123
+    bucket: starlake  # Bucket name for SL_ROOT (created on first PUT)
 
-  # Buckets to create
-  buckets:
-    - ducklake-files
-    - warehouse
+  # Note: SeaweedFS creates buckets automatically on first access
+
+  nodeSelector: {}
+  tolerations: []
 
 # Persistence for shared volumes
 persistence:
@@ -394,14 +400,12 @@ ingress:
     gizmo: /gizmo
 
 # Demo Projects Initialization
-# When enabled, the UI will automatically initialize demo projects from bundled ZIPs
-# This sets SL_UI_DEMO=true which triggers the UI's internal ProjectService to:
-# - Extract demo ZIPs from /app/demo/
-# - Create PostgreSQL databases for DuckLake
-# - Create DuckDB persistent secrets
-# - Initialize project structure
+# Demo projects (starbake, tpch001) are ALWAYS stored on local PVC (/projects)
+# regardless of storage mode (local, S3, SeaweedFS, etc.)
+# This provides working examples out-of-the-box in all deployment modes.
+# For production S3/SeaweedFS projects, users create them manually via UI.
 demo:
-  enabled: false  # Set to true to initialize demo projects on install
+  enabled: true  # Enable demo projects for immediate working examples
 
 # Service Account
 serviceAccount:

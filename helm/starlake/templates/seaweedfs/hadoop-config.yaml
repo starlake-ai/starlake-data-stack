@@ -1,0 +1,105 @@
+{{- if .Values.seaweedfs.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "starlake.fullname" . }}-hadoop-config
+  labels:
+    {{- include "starlake.componentLabels" (dict "component" "seaweedfs" "context" .) | nindent 4 }}
+data:
+  # Spark defaults configuration with Hadoop S3A settings
+  # Spark reads Hadoop config via spark.hadoop.* prefix
+  spark-defaults.conf: |
+    # S3A FileSystem endpoint - SeaweedFS S3 API
+    spark.hadoop.fs.s3a.endpoint http://{{ include "starlake.fullname" . }}-seaweedfs:{{ .Values.seaweedfs.service.s3Port }}
+    spark.hadoop.fs.s3a.path.style.access true
+    spark.hadoop.fs.s3a.connection.ssl.enabled false
+    spark.hadoop.fs.s3a.impl org.apache.hadoop.fs.s3a.S3AFileSystem
+    spark.hadoop.fs.s3a.access.key {{ .Values.seaweedfs.s3.accessKey }}
+    spark.hadoop.fs.s3a.secret.key {{ .Values.seaweedfs.s3.secretKey }}
+    spark.hadoop.fs.s3a.bucket.probe 0
+    # Use S3 V2 signing to avoid AWS V4 chunked encoding (Hadoop 3.3.4 doesn't
+    # support payload.signing.enabled; V4 chunked encoding causes SeaweedFS to
+    # store 86-byte chunk terminators as directory marker content)
+    spark.hadoop.fs.s3a.signing-algorithm S3SignerType
+    # SeaweedFS-recommended settings (https://github.com/seaweedfs/seaweedfs/wiki/HDFS-via-S3-connector)
+    spark.hadoop.fs.s3a.directory.marker.retention keep
+    spark.hadoop.fs.s3a.multiobjectdelete.enable false
+    spark.hadoop.fs.s3a.change.detection.mode warn
+    spark.hadoop.fs.s3a.change.detection.version.required false
+
+  # Hadoop core-site.xml configuration for S3A connector to use SeaweedFS
+  core-site.xml: |
+    <?xml version="1.0" encoding="UTF-8"?>
+    <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+    <configuration>
+      <!-- S3A FileSystem endpoint - SeaweedFS S3 API -->
+      <property>
+        <name>fs.s3a.endpoint</name>
+        <value>http://{{ include "starlake.fullname" . }}-seaweedfs:{{ .Values.seaweedfs.service.s3Port }}</value>
+      </property>
+
+      <!-- Use path-style URLs (required for non-AWS S3) -->
+      <property>
+        <name>fs.s3a.path.style.access</name>
+        <value>true</value>
+      </property>
+
+      <!-- Disable SSL (SeaweedFS uses HTTP internally) -->
+      <property>
+        <name>fs.s3a.connection.ssl.enabled</name>
+        <value>false</value>
+      </property>
+
+      <!-- S3A FileSystem implementation -->
+      <property>
+        <name>fs.s3a.impl</name>
+        <value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>
+      </property>
+
+      <!-- AWS credentials from environment variables -->
+      <property>
+        <name>fs.s3a.access.key</name>
+        <value>{{ .Values.seaweedfs.s3.accessKey }}</value>
+      </property>
+      <property>
+        <name>fs.s3a.secret.key</name>
+        <value>{{ .Values.seaweedfs.s3.secretKey }}</value>
+      </property>
+
+      <!-- Use S3 V2 signing to avoid AWS V4 chunked encoding
+           (Hadoop 3.3.4 doesn't support payload.signing.enabled;
+           V4 chunked encoding causes SeaweedFS to store 86-byte
+           chunk terminators as directory marker content) -->
+      <property>
+        <name>fs.s3a.signing-algorithm</name>
+        <value>S3SignerType</value>
+      </property>
+
+      <!-- Disable bucket existence check (faster startup) -->
+      <property>
+        <name>fs.s3a.bucket.probe</name>
+        <value>0</value>
+      </property>
+
+      <!-- SeaweedFS-recommended settings -->
+      <!-- Keep directory markers: SeaweedFS manages directories natively via Filer -->
+      <property>
+        <name>fs.s3a.directory.marker.retention</name>
+        <value>keep</value>
+      </property>
+      <!-- Disable multi-object delete: unreliable on non-AWS S3 backends -->
+      <property>
+        <name>fs.s3a.multiobjectdelete.enable</name>
+        <value>false</value>
+      </property>
+      <!-- Warn on change detection instead of failing -->
+      <property>
+        <name>fs.s3a.change.detection.mode</name>
+        <value>warn</value>
+      </property>
+      <property>
+        <name>fs.s3a.change.detection.version.required</name>
+        <value>false</value>
+      </property>
+    </configuration>
+{{- end }}

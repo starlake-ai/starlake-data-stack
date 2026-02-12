@@ -1,0 +1,90 @@
+{{- if .Values.seaweedfs.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "starlake.fullname" . }}-seaweedfs-init
+  labels:
+    {{- include "starlake.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seaweedfs-init
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  ttlSecondsAfterFinished: 60
+  template:
+    metadata:
+      labels:
+        {{- include "starlake.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: seaweedfs-init
+    spec:
+      restartPolicy: OnFailure
+      # NOTE: Demo projects are NO LONGER uploaded to S3
+      # Demos are handled by UI application and stored entirely on local PVC
+      # SeaweedFS is for user-created production projects only
+      containers:
+        - name: create-bucket
+          image: amazon/aws-cli:2.15.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              value: {{ .Values.seaweedfs.s3.accessKey | quote }}
+            - name: AWS_SECRET_ACCESS_KEY
+              value: {{ .Values.seaweedfs.s3.secretKey | quote }}
+            - name: S3_ENDPOINT
+              value: "http://{{ include "starlake.fullname" . }}-seaweedfs:{{ .Values.seaweedfs.service.s3Port }}"
+            - name: BUCKET_NAME
+              value: {{ .Values.seaweedfs.s3.bucket | quote }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "=== SeaweedFS Bucket Initialization ==="
+              echo "Endpoint: $S3_ENDPOINT"
+              echo "Bucket: $BUCKET_NAME"
+
+              # Wait for SeaweedFS to be available (with retries)
+              echo "Waiting for SeaweedFS S3 API to be ready..."
+              MAX_WAIT=120
+              WAIT_COUNT=0
+              until aws --endpoint-url "$S3_ENDPOINT" s3 ls 2>/dev/null; do
+                WAIT_COUNT=$((WAIT_COUNT + 1))
+                if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+                  echo "ERROR: SeaweedFS S3 API not available after ${MAX_WAIT} attempts"
+                  exit 1
+                fi
+                echo "SeaweedFS not ready yet (attempt $WAIT_COUNT/$MAX_WAIT), waiting 2s..."
+                sleep 2
+              done
+              echo "SeaweedFS S3 API is ready!"
+
+              # Create bucket (ignore error if already exists)
+              echo "Creating bucket s3://$BUCKET_NAME..."
+              aws --endpoint-url "$S3_ENDPOINT" s3 mb "s3://$BUCKET_NAME" 2>/dev/null || {
+                if aws --endpoint-url "$S3_ENDPOINT" s3 ls "s3://$BUCKET_NAME" 2>/dev/null; then
+                  echo "Bucket already exists, skipping creation"
+                else
+                  echo "ERROR: Failed to create bucket"
+                  exit 1
+                fi
+              }
+
+              # Verify bucket exists
+              echo "Verifying bucket..."
+              if aws --endpoint-url "$S3_ENDPOINT" s3 ls "s3://$BUCKET_NAME" 2>/dev/null; then
+                echo "Bucket s3://$BUCKET_NAME is ready!"
+              else
+                echo "ERROR: Bucket verification failed"
+                exit 1
+              fi
+
+              # List buckets for debugging
+              echo "Available buckets:"
+              aws --endpoint-url "$S3_ENDPOINT" s3 ls
+
+              echo ""
+              echo "=== Bucket Initialization Complete ==="
+              echo "Note: Demo projects are managed by UI and stored on local PVC"
+              echo "SeaweedFS bucket is ready for user-created production projects"
+{{- end }}

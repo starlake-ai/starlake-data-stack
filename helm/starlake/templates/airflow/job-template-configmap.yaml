@@ -58,8 +58,25 @@ data:
                 - "--"
               args: __STARLAKE_ARGS__
               env:
+                # Storage Mode - ALWAYS local filesystem, even with SeaweedFS enabled
+                # SL_ROOT is dynamically replaced by Airflow DAG with project path
+                # SeaweedFS is provisioned but not used by default
                 - name: SL_ROOT
                   value: __SL_ROOT__
+                {{- if .Values.seaweedfs.enabled }}
+                # S3 credentials available for manual project creation in UI
+                # These are NOT used by default - only when user creates S3-backed projects
+                - name: AWS_ACCESS_KEY_ID
+                  value: {{ .Values.seaweedfs.s3.accessKey | quote }}
+                - name: AWS_SECRET_ACCESS_KEY
+                  value: {{ .Values.seaweedfs.s3.secretKey | quote }}
+                - name: AWS_S3_ENDPOINT
+                  value: "http://{{ include "starlake.fullname" . }}-seaweedfs:{{ .Values.seaweedfs.service.s3Port }}"
+                - name: AWS_REGION
+                  value: "us-east-1"
+                - name: HADOOP_CONF_DIR
+                  value: "/etc/hadoop/conf"
+                {{- end }}
                 __ENV_VARS__
               resources:
                 requests:
@@ -71,8 +88,19 @@ data:
               volumeMounts:
                 - name: projects
                   mountPath: /projects
+                {{- if .Values.seaweedfs.enabled }}
+                - name: hadoop-config
+                  mountPath: /etc/hadoop/conf
+                {{- end }}
           volumes:
+            # Always use PVC for /projects (local filesystem)
+            # SeaweedFS is provisioned separately but not used by default
             - name: projects
               persistentVolumeClaim:
                 claimName: {{ include "starlake.fullname" . }}-projects
+            {{- if .Values.seaweedfs.enabled }}
+            - name: hadoop-config
+              configMap:
+                name: {{ include "starlake.fullname" . }}-hadoop-config
+            {{- end }}
 {{- end }}

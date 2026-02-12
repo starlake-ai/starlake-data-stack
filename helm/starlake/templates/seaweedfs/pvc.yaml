@@ -1,0 +1,18 @@
+{{- if and .Values.seaweedfs.enabled .Values.seaweedfs.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "starlake.fullname" . }}-seaweedfs
+  labels:
+    {{- include "starlake.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seaweedfs
+spec:
+  accessModes:
+    - {{ .Values.seaweedfs.persistence.accessMode }}
+  {{- if .Values.seaweedfs.persistence.storageClass }}
+  storageClassName: {{ .Values.seaweedfs.persistence.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.seaweedfs.persistence.size }}
+{{- end }}

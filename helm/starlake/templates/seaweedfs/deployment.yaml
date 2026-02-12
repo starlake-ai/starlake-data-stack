@@ -1,0 +1,107 @@
+{{- if .Values.seaweedfs.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "starlake.fullname" . }}-seaweedfs
+  labels:
+    {{- include "starlake.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seaweedfs
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "starlake.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: seaweedfs
+  template:
+    metadata:
+      labels:
+        {{- include "starlake.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: seaweedfs
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        fsGroup: 1000
+      containers:
+        # Master + Volume + Filer in single container (dev/test mode)
+        - name: seaweedfs
+          image: "{{ .Values.seaweedfs.image.repository }}:{{ .Values.seaweedfs.image.tag }}"
+          imagePullPolicy: {{ .Values.seaweedfs.image.pullPolicy }}
+          args:
+            - "server"
+            - "-dir=/data"
+            - "-s3"
+            - "-s3.port=8333"
+            - "-s3.config=/etc/seaweedfs/s3.json"
+            - "-master.volumeSizeLimitMB={{ .Values.seaweedfs.volumeSizeLimitMB }}"
+            - "-ip.bind=0.0.0.0"
+          ports:
+            # HTTP ports
+            - name: master
+              containerPort: 9333
+              protocol: TCP
+            - name: volume
+              containerPort: 8080
+              protocol: TCP
+            - name: filer
+              containerPort: 8888
+              protocol: TCP
+            - name: s3
+              containerPort: 8333
+              protocol: TCP
+            # gRPC ports (HTTP port + 10000)
+            - name: master-grpc
+              containerPort: 19333
+              protocol: TCP
+            - name: volume-grpc
+              containerPort: 18080
+              protocol: TCP
+            - name: filer-grpc
+              containerPort: 18888
+              protocol: TCP
+          env:
+            - name: WEED_MASTER_VOLUME_SIZE_LIMIT_MB
+              value: "{{ .Values.seaweedfs.volumeSizeLimitMB }}"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: s3-config
+              mountPath: /etc/seaweedfs
+          livenessProbe:
+            httpGet:
+              path: /cluster/status
+              port: master
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /cluster/status
+              port: master
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.seaweedfs.resources | nindent 12 }}
+      volumes:
+        - name: data
+          {{- if .Values.seaweedfs.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "starlake.fullname" . }}-seaweedfs
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: s3-config
+          secret:
+            secretName: {{ include "starlake.fullname" . }}-seaweedfs
+      {{- with .Values.seaweedfs.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.seaweedfs.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

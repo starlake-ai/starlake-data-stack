@@ -1,4 +1,5 @@
 {{- if .Values.persistence.projects.enabled }}
+{{- /* PVC needed even with SeaweedFS: stores .db files (DuckDB JDBC requires local access) */}}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

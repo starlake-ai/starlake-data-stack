@@ -1,0 +1,37 @@
+{{- if .Values.seaweedfs.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "starlake.fullname" . }}-seaweedfs
+  labels:
+    {{- include "starlake.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seaweedfs
+spec:
+  type: {{ .Values.seaweedfs.service.type }}
+  ports:
+    # HTTP ports
+    - port: {{ .Values.seaweedfs.service.s3Port }}
+      targetPort: s3
+      protocol: TCP
+      name: s3
+    - port: {{ .Values.seaweedfs.service.masterPort }}
+      targetPort: master
+      protocol: TCP
+      name: master
+    - port: {{ .Values.seaweedfs.service.filerPort }}
+      targetPort: filer
+      protocol: TCP
+      name: filer
+    # gRPC ports (HTTP port + 10000)
+    - port: 19333
+      targetPort: master-grpc
+      protocol: TCP
+      name: master-grpc
+    - port: 18888
+      targetPort: filer-grpc
+      protocol: TCP
+      name: filer-grpc
+  selector:
+    {{- include "starlake.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: seaweedfs
+{{- end }}
