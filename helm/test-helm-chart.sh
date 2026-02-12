@@ -6,11 +6,12 @@
 #   - Multi-node: Cluster avec agents, local-path storage (avec limitations)
 #
 # Usage:
-#   ./test-helm-chart.sh              # Mode dev single-node (credentials par défaut)
-#   ./test-helm-chart.sh --production # Mode production (credentials sécurisés, validation activée)
-#   ./test-helm-chart.sh --multi-node # Mode multi-nœuds (1 server + 3 agents)
-#   ./test-helm-chart.sh --multi-node --production # Multi-nœuds + credentials sécurisés
-#   ./test-helm-chart.sh --security-only # Test validation sécurité seulement (pas de cluster)
+#   ./test-helm-chart.sh              # Dev single-node (credentials par défaut)
+#   ./test-helm-chart.sh --production # Production single-node (credentials sécurisés)
+#   ./test-helm-chart.sh --multi-node # Multi-nœuds local-path (1 server + 3 agents)
+#   ./test-helm-chart.sh --multi-node --seaweedfs  # Multi-nœuds avec S3 (SeaweedFS)
+#   ./test-helm-chart.sh --production --multi-node --seaweedfs # Full production-like
+#   ./test-helm-chart.sh --security-only # Validation sécurité seulement (pas de cluster)
 #
 # Prérequis:
 #   - k3d (brew install k3d)
@@ -35,6 +36,7 @@ PRODUCTION_MODE=false
 SECURITY_ONLY=false
 MULTI_NODE=false
 AGENT_COUNT=3  # Nombre d'agents pour multi-node
+SEAWEEDFS_ENABLED=false  # Object storage S3
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -55,8 +57,12 @@ while [[ $# -gt 0 ]]; do
             AGENT_COUNT=$2
             shift 2
             ;;
+        --seaweedfs)
+            SEAWEEDFS_ENABLED=true
+            shift
+            ;;
         *)
-            echo "Usage: $0 [--production|-p] [--security-only|-s] [--multi-node|-m] [--agents N]"
+            echo "Usage: $0 [--production|-p] [--security-only|-s] [--multi-node|-m] [--agents N] [--seaweedfs]"
             exit 1
             ;;
     esac
@@ -185,6 +191,9 @@ if [ "$PRODUCTION_MODE" = true ]; then
     echo "  🔒 PRODUCTION - Credentials sécurisés"
 else
     echo "  🔧 DEV - Credentials par défaut"
+fi
+if [ "$SEAWEEDFS_ENABLED" = true ]; then
+    echo "  📦 SEAWEEDFS - Object storage S3 activé"
 fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
@@ -672,10 +681,24 @@ if [ "$MULTI_NODE" = true ]; then
     # Ne pas ajouter de nodeSelector - laisser Gizmo se scheduler où le PVC est disponible
 fi
 
+# Options SeaweedFS (object storage S3)
+SEAWEEDFS_OPTS=""
+if [ "$SEAWEEDFS_ENABLED" = true ]; then
+    log_info "  SeaweedFS: Object storage S3 activé (pour projets utilisateur)"
+    log_info "  Note: Initialisation du bucket S3 via hook post-install (~30-60s)"
+    SEAWEEDFS_OPTS="--set seaweedfs.enabled=true"
+    SEAWEEDFS_OPTS="$SEAWEEDFS_OPTS --set seaweedfs.persistence.storageClass=$STORAGE_CLASS"
+fi
+
+# Demo projects - always enabled and stored on local PVC
+# (regardless of storage mode - provides working examples out-of-the-box)
+DEMO_ENABLED="true"
+log_info "  Demo: Activé (toujours en local PVC pour exemples fonctionnels)"
+
 helm install starlake $CHART_PATH \
     --namespace $NAMESPACE \
     --create-namespace \
-    --wait=false \
+    --timeout 10m \
     --set postgresql.internal.persistence.size=2Gi \
     --set postgresql.internal.persistence.storageClass=$STORAGE_CLASS \
     --set persistence.projects.size=2Gi \
@@ -691,13 +714,17 @@ helm install starlake $CHART_PATH \
     --set gizmo.resources.requests.memory=512Mi \
     --set gizmo.resources.limits.memory=2Gi \
     --set ui.service.type=ClusterIP \
-    --set demo.enabled=true \
+    --set ingress.enabled=true \
+    --set ingress.className="" \
+    --set ingress.host="" \
+    --set demo.enabled=$DEMO_ENABLED \
     --set ui.frontendUrl=http://localhost:8080 \
     --set airflow.baseUrl=http://localhost:8080/airflow \
     --set airflow.jobRunner.enabled=true \
     $CREDENTIAL_OPTS \
     $LOCAL_IMAGE_OPTS \
-    $MULTINODE_OPTS || {
+    $MULTINODE_OPTS \
+    $SEAWEEDFS_OPTS || {
         log_error "Installation du chart a échoué"
         exit 1
     }
@@ -974,9 +1001,27 @@ fi
 
 kill $PF_PID 2>/dev/null || true
 
+# Test 7: Health check SeaweedFS (si activé)
+if [ "$SEAWEEDFS_ENABLED" = true ]; then
+    log_info "Test 7/7: Health check SeaweedFS (via port-forward direct)..."
+    kubectl port-forward svc/starlake-seaweedfs 8399:8333 -n $NAMESPACE > /dev/null 2>&1 &
+    PF_PID=$!
+    sleep $PORT_FORWARD_SLEEP
+
+    # Test S3 API health
+    SEAWEEDFS_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8399/ 2>/dev/null || echo "000")
+    if [ "$SEAWEEDFS_HEALTH" = "200" ] || [ "$SEAWEEDFS_HEALTH" = "403" ]; then
+        log_success "  SeaweedFS S3: OK (HTTP $SEAWEEDFS_HEALTH)"
+    else
+        log_warning "  SeaweedFS S3: HTTP $SEAWEEDFS_HEALTH (peut prendre plus de temps)"
+    fi
+
+    kill $PF_PID 2>/dev/null || true
+fi
+
 echo ""
 
-# 7. Test d'upgrade (optionnel, rapide)
+# 8. Test d'upgrade (optionnel, rapide)
 log_info "Test d'upgrade du chart..."
 helm upgrade starlake $CHART_PATH \
     --namespace $NAMESPACE \
@@ -1008,6 +1053,9 @@ echo "  - Airflow Webserver + Scheduler"
 echo "  - Starlake UI"
 echo "  - Starlake Agent (AI)"
 echo "  - Gizmo (SQL on-demand)"
+if [ "$SEAWEEDFS_ENABLED" = true ]; then
+    echo "  - SeaweedFS (S3 Object Storage)"
+fi
 echo "  - Headlamp (Interface Web Kubernetes)"
 echo ""
 
@@ -1036,6 +1084,28 @@ log_success "  Agent: http://localhost:8000 (PID: $AGENT_PF_PID)"
 kubectl port-forward svc/starlake-gizmo 10900:10900 -n $NAMESPACE > /dev/null 2>&1 &
 GIZMO_PF_PID=$!
 log_success "  Gizmo: http://localhost:10900 (PID: $GIZMO_PF_PID)"
+
+# Démarrer SeaweedFS port-forwards (si activé)
+if [ "$SEAWEEDFS_ENABLED" = true ]; then
+    # S3 API (8333)
+    kubectl port-forward svc/starlake-seaweedfs 8333:8333 -n $NAMESPACE > /dev/null 2>&1 &
+    SEAWEEDFS_S3_PF_PID=$!
+    log_success "  SeaweedFS S3 API: http://localhost:8333 (PID: $SEAWEEDFS_S3_PF_PID)"
+
+    # Master UI (9333) - Interface web cluster status
+    kubectl port-forward svc/starlake-seaweedfs 9333:9333 -n $NAMESPACE > /dev/null 2>&1 &
+    SEAWEEDFS_MASTER_PF_PID=$!
+    log_success "  SeaweedFS Master UI: http://localhost:9333 (PID: $SEAWEEDFS_MASTER_PF_PID)"
+
+    # Filer UI (8888) - File browser
+    kubectl port-forward svc/starlake-seaweedfs 8888:8888 -n $NAMESPACE > /dev/null 2>&1 &
+    SEAWEEDFS_FILER_PF_PID=$!
+    log_success "  SeaweedFS Filer UI: http://localhost:8888 (PID: $SEAWEEDFS_FILER_PF_PID)"
+
+    log_info "    S3 Endpoint: http://localhost:8333"
+    log_info "    Bucket: starlake (SL_ROOT=s3a://starlake)"
+    log_info "    Credentials: seaweedfs / seaweedfs123"
+fi
 
 sleep $PORT_FORWARD_SLEEP
 
@@ -1080,6 +1150,32 @@ else
     log_warning "  Gizmo: HTTP $GIZMO_CHECK - Vérifiez le pod: kubectl get pods -n $NAMESPACE -l app.kubernetes.io/component=gizmo"
 fi
 
+if [ "$SEAWEEDFS_ENABLED" = true ]; then
+    # Check S3 API (403 is expected without auth)
+    SEAWEEDFS_S3_CHECK=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8333/ 2>/dev/null || echo "000")
+    if [ "$SEAWEEDFS_S3_CHECK" = "200" ] || [ "$SEAWEEDFS_S3_CHECK" = "403" ]; then
+        log_success "  SeaweedFS S3 API: OK (HTTP $SEAWEEDFS_S3_CHECK)"
+    else
+        log_warning "  SeaweedFS S3 API: HTTP $SEAWEEDFS_S3_CHECK"
+    fi
+
+    # Check Master UI
+    SEAWEEDFS_MASTER_CHECK=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:9333/ 2>/dev/null || echo "000")
+    if [ "$SEAWEEDFS_MASTER_CHECK" = "200" ]; then
+        log_success "  SeaweedFS Master UI: OK (HTTP $SEAWEEDFS_MASTER_CHECK)"
+    else
+        log_warning "  SeaweedFS Master UI: HTTP $SEAWEEDFS_MASTER_CHECK"
+    fi
+
+    # Check Filer UI
+    SEAWEEDFS_FILER_CHECK=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8888/ 2>/dev/null || echo "000")
+    if [ "$SEAWEEDFS_FILER_CHECK" = "200" ]; then
+        log_success "  SeaweedFS Filer UI: OK (HTTP $SEAWEEDFS_FILER_CHECK)"
+    else
+        log_warning "  SeaweedFS Filer UI: HTTP $SEAWEEDFS_FILER_CHECK"
+    fi
+fi
+
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  🌐 Applications Accessibles"
@@ -1090,6 +1186,13 @@ echo "  Starlake UI:  http://localhost:8080"
 echo "  Airflow:      http://localhost:8080/airflow (via UI proxy)"
 echo "  Agent:        http://localhost:8000"
 echo "  Gizmo:        http://localhost:10900"
+if [ "$SEAWEEDFS_ENABLED" = true ]; then
+    echo ""
+    echo "  SeaweedFS:"
+    echo "    Master UI:  http://localhost:9333 (cluster status)"
+    echo "    Filer UI:   http://localhost:8888 (file browser)"
+    echo "    S3 API:     http://localhost:8333 (requires auth)"
+fi
 echo ""
 if [ "$PRODUCTION_MODE" = true ]; then
     echo "  🔒 Mode Production - Credentials sécurisés:"
@@ -1099,6 +1202,17 @@ if [ "$PRODUCTION_MODE" = true ]; then
 else
     echo "  Credentials Airflow: airflow / airflow"
     echo "  Credentials PostgreSQL: dbuser / dbuser123"
+fi
+if [ "$SEAWEEDFS_ENABLED" = true ]; then
+    echo ""
+    echo "  📦 SeaweedFS Object Storage:"
+    echo "    Master UI:  http://localhost:9333 (cluster status)"
+    echo "    Filer UI:   http://localhost:8888 (file browser)"
+    echo "    S3 API:     http://localhost:8333"
+    echo "    Bucket:     starlake"
+    echo "    SL_ROOT:    s3a://starlake"
+    echo "    Access Key: seaweedfs"
+    echo "    Secret Key: seaweedfs123"
 fi
 echo ""
 
