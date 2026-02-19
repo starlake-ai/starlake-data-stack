@@ -1089,10 +1089,20 @@ kubectl port-forward svc/starlake-agent 8000:8000 -n $NAMESPACE > /dev/null 2>&1
 AGENT_PF_PID=$!
 log_success "  Agent: http://localhost:8000 (PID: $AGENT_PF_PID)"
 
-# Démarrer Gizmo port-forward (port 10900)
+# Démarrer Gizmo port-forward (port 10900 API + ports 11900-11909 SQL)
 kubectl port-forward svc/starlake-gizmo 10900:10900 -n $NAMESPACE > /dev/null 2>&1 &
 GIZMO_PF_PID=$!
-log_success "  Gizmo: http://localhost:10900 (PID: $GIZMO_PF_PID)"
+log_success "  Gizmo API: http://localhost:10900 (PID: $GIZMO_PF_PID)"
+
+# Port-forward Gizmo SQL ports (11900-11909) via le pod directement (hostNetwork)
+GIZMO_POD=$(kubectl get pod -n $NAMESPACE -l app.kubernetes.io/component=gizmo -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+if [ -n "$GIZMO_POD" ]; then
+    for port in $(seq 11900 11909); do
+        kubectl port-forward "pod/$GIZMO_POD" "$port:$port" -n $NAMESPACE > /dev/null 2>&1 &
+    done
+    log_success "  Gizmo SQL: localhost:11900-11909 (Arrow Flight SQL, TLS)"
+    log_info "    JDBC: jdbc:arrow-flight-sql://localhost:11900?useEncryption=true&disableCertificateVerification=true"
+fi
 
 # Démarrer SeaweedFS port-forwards (si activé)
 if [ "$SEAWEEDFS_ENABLED" = true ]; then
@@ -1194,7 +1204,9 @@ echo "  Headlamp:     http://localhost:9999"
 echo "  Starlake UI:  http://localhost:8080"
 echo "  Airflow:      http://localhost:8080/airflow (via UI proxy)"
 echo "  Agent:        http://localhost:8000"
-echo "  Gizmo:        http://localhost:10900"
+echo "  Gizmo API:    http://localhost:10900"
+echo "  Gizmo SQL:    localhost:11900-11909 (Arrow Flight SQL, TLS)"
+echo "    JDBC: jdbc:arrow-flight-sql://localhost:11900?useEncryption=true&disableCertificateVerification=true"
 if [ "$SEAWEEDFS_ENABLED" = true ]; then
     echo ""
     echo "  SeaweedFS:"
