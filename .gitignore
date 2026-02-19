@@ -20,3 +20,6 @@ projects
 *.local.md
 .claude/settings.local.json
 .claude/scripts/
+.vscode
+**/**/CLAUDE.md
+tpch001
