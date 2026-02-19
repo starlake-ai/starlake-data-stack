@@ -226,11 +226,11 @@ SECURITY_TEST_OUTPUT=$(helm template test-security $CHART_PATH \
     --set airflow.secretKey="starlake-airflow-secret-key-change-in-production" \
     2>&1) && SECURITY_TEST_RESULT=$? || SECURITY_TEST_RESULT=$?
 
-if [ $SECURITY_TEST_RESULT -ne 0 ] && echo "$SECURITY_TEST_OUTPUT" | grep -q "SECURITY ERROR"; then
+if [ $SECURITY_TEST_RESULT -ne 0 ] && grep -q "SECURITY ERROR" <<< "$SECURITY_TEST_OUTPUT"; then
     log_success "  ✓ Validation bloque correctement les credentials par défaut"
 else
     log_error "  ✗ Validation devrait bloquer les credentials par défaut!"
-    echo "$SECURITY_TEST_OUTPUT" | head -5
+    head -5 <<< "$SECURITY_TEST_OUTPUT"
     if [ "$SECURITY_ONLY" = true ]; then exit 1; fi
 fi
 
@@ -249,7 +249,7 @@ if [ $SECURITY_TEST_RESULT -eq 0 ]; then
     log_success "  ✓ Validation accepte les credentials sécurisés"
 else
     log_error "  ✗ Validation devrait accepter les credentials sécurisés!"
-    echo "$SECURITY_TEST_OUTPUT" | head -10
+    head -10 <<< "$SECURITY_TEST_OUTPUT"
     if [ "$SECURITY_ONLY" = true ]; then exit 1; fi
 fi
 
@@ -262,7 +262,7 @@ SECURITY_TEST_OUTPUT=$(helm template test-security $CHART_PATH \
     --set airflow.secretKey="$(openssl rand -hex 32)" \
     2>&1) && SECURITY_TEST_RESULT=$? || SECURITY_TEST_RESULT=$?
 
-if [ $SECURITY_TEST_RESULT -ne 0 ] && echo "$SECURITY_TEST_OUTPUT" | grep -q "postgresql.credentials.password"; then
+if [ $SECURITY_TEST_RESULT -ne 0 ] && grep -q "postgresql.credentials.password" <<< "$SECURITY_TEST_OUTPUT"; then
     log_success "  ✓ Validation bloque postgresql password par défaut"
 else
     log_error "  ✗ Validation devrait bloquer postgresql password par défaut!"
@@ -274,10 +274,10 @@ SECRETS_OUTPUT=$(helm template test-secrets $CHART_PATH \
     --set airflow.enabled=true \
     2>&1)
 
-if echo "$SECRETS_OUTPUT" | grep -q "kind: Secret" && \
-   echo "$SECRETS_OUTPUT" | grep -q "starlake-airflow" && \
-   echo "$SECRETS_OUTPUT" | grep -q "admin-password" && \
-   echo "$SECRETS_OUTPUT" | grep -q "secret-key"; then
+if grep -q "kind: Secret" <<< "$SECRETS_OUTPUT" && \
+   grep -q "starlake-airflow" <<< "$SECRETS_OUTPUT" && \
+   grep -q "admin-password" <<< "$SECRETS_OUTPUT" && \
+   grep -q "secret-key" <<< "$SECRETS_OUTPUT"; then
     log_success "  ✓ Secret Airflow créé avec admin-password et secret-key"
 else
     log_error "  ✗ Secret Airflow mal configuré!"
@@ -285,8 +285,8 @@ fi
 
 # Test 5: Vérifier que le deployment utilise secretKeyRef
 log_info "Test 5: Vérification utilisation secretKeyRef dans deployment..."
-if echo "$SECRETS_OUTPUT" | grep -q "secretKeyRef" && \
-   echo "$SECRETS_OUTPUT" | grep -q "AIRFLOW_ADMIN_PASSWORD"; then
+if grep -q "secretKeyRef" <<< "$SECRETS_OUTPUT" && \
+   grep -q "AIRFLOW_ADMIN_PASSWORD" <<< "$SECRETS_OUTPUT"; then
     log_success "  ✓ Deployment utilise secretKeyRef pour le password"
 else
     log_error "  ✗ Deployment devrait utiliser secretKeyRef!"
@@ -409,9 +409,9 @@ build_and_import_image() {
             local import_status=$?
 
             # Vérifier le code de retour ET la présence d'erreurs dans la sortie
-            if [ $import_status -ne 0 ] || echo "$import_output" | grep -qi "error\|failed"; then
+            if [ $import_status -ne 0 ] || grep -qi "error\|failed" <<< "$import_output"; then
                 log_warning "Import de l'image $description a échoué"
-                echo "$import_output" | head -5
+                head -5 <<< "$import_output"
                 return 1
             fi
             log_success "Image $description importée: $image_tag"
@@ -440,9 +440,9 @@ import_existing_image() {
         local import_status=$?
 
         # Vérifier le code de retour ET la présence d'erreurs dans la sortie
-        if [ $import_status -ne 0 ] || echo "$import_output" | grep -qi "error\|failed"; then
+        if [ $import_status -ne 0 ] || grep -qi "error\|failed" <<< "$import_output"; then
             log_warning "Import de l'image $description a échoué"
-            echo "$import_output" | head -5
+            head -5 <<< "$import_output"
             return 1
         fi
         log_success "Image $description importée: $local_tag"
@@ -779,13 +779,14 @@ while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
     fi
 
     # Compter les pods par état (exclure les jobs Completed)
-    TOTAL=$(echo "$PODS_STATUS" | grep -v "Completed" | wc -l | tr -d ' ')
-    RUNNING=$(echo "$PODS_STATUS" | grep -c "Running" || true)
-    PENDING=$(echo "$PODS_STATUS" | grep -c "Pending" || true)
-    CRASHLOOP=$(echo "$PODS_STATUS" | grep -c "CrashLoopBackOff\|ImagePullBackOff" || true)
-    ERROR=$(echo "$PODS_STATUS" | grep -E "Error" | grep -v "Completed" | wc -l | tr -d ' ')
-    INIT=$(echo "$PODS_STATUS" | grep -c "Init:" || true)
-    READY=$(echo "$PODS_STATUS" | grep -E "[0-9]+/[0-9]+.*Running" | awk '{split($2,a,"/"); if(a[1]==a[2]) print}' | wc -l | tr -d ' ')
+    # Note: pipefail + grep = exit 1 si pas de match, d'où les sous-shells
+    TOTAL=$(grep -vc "Completed" <<< "$PODS_STATUS" || true)
+    RUNNING=$(grep -c "Running" <<< "$PODS_STATUS" || true)
+    PENDING=$(grep -c "Pending" <<< "$PODS_STATUS" || true)
+    CRASHLOOP=$(grep -c "CrashLoopBackOff\|ImagePullBackOff" <<< "$PODS_STATUS" || true)
+    ERROR=$({ grep -E "Error" <<< "$PODS_STATUS" | grep -vc "Completed"; } || true)
+    INIT=$(grep -c "Init:" <<< "$PODS_STATUS" || true)
+    READY=$({ grep -E "[0-9]+/[0-9]+.*Running" <<< "$PODS_STATUS" | awk '{split($2,a,"/"); if(a[1]==a[2]) print}' | wc -l | tr -d ' '; } || true)
 
     echo -ne "\r[$ATTEMPT/$MAX_ATTEMPTS] Pods: $READY/$TOTAL Ready, $RUNNING Running, $INIT Init, $PENDING Pending, $CRASHLOOP CrashLoop    "
 
@@ -946,7 +947,7 @@ AIRFLOW_POD=$(kubectl get pod -n $NAMESPACE -l app.kubernetes.io/component=airfl
 if [ -n "$AIRFLOW_POD" ]; then
     API_RESPONSE=$(kubectl exec $AIRFLOW_POD -n $NAMESPACE -- \
         curl -s -u airflow:airflow http://localhost:8080/airflow/api/v1/dags 2>/dev/null || echo "")
-    if echo "$API_RESPONSE" | grep -q "dags"; then
+    if grep -q "dags" <<< "$API_RESPONSE"; then
         log_success "  API Airflow: OK"
     else
         log_warning "  API Airflow: En cours de démarrage..."
