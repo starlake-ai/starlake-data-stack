@@ -307,7 +307,13 @@ fi
 
 echo ""
 
-# 1. Créer le cluster K3s
+# 1. Créer le cluster K3s (supprimer l'ancien si existant)
+if k3d cluster list 2>/dev/null | grep -q "$CLUSTER_NAME" 2>/dev/null; then
+    log_info "Cluster '$CLUSTER_NAME' existant détecté, suppression..."
+    k3d cluster delete "$CLUSTER_NAME" 2>/dev/null || true
+    sleep 2
+fi
+
 if [ "$MULTI_NODE" = true ]; then
     log_info "Création du cluster K3s '$CLUSTER_NAME' (multi-node: 1 server + $AGENT_COUNT agents)..."
     log_info "  Note: Multi-node utilise local-path (RWX recommandé en production)"
@@ -481,6 +487,7 @@ done
 
 # 4. Importer l'image Agent (Ask) si elle existe localement
 AGENT_IMAGES=(
+    "starlakeai/starlake-1.5-ask:0.1"
     "starlakeai/starlake-1.5-ask:1.5"
     "starlakeai/starlake-1.5-ask:latest"
     "starlakeai/starlake-ask:latest"
@@ -496,6 +503,7 @@ done
 GIZMO_IMAGE_LOCAL="starlake-gizmo:local"
 USE_LOCAL_GIZMO_IMAGE=""
 GIZMO_IMAGES=(
+    "starlakeai/gizmo-on-demand:snapshot-slim"
     "starlakeai/gizmo-on-demand:latest"
     "starlakeai/gizmo-on-demand:1.0"
 )
