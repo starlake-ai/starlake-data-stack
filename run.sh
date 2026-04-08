@@ -1,1 +1,1 @@
-docker compose --profile airflow --profile gizmo --profile gizmo up
+docker compose --profile airflow3 --profile gizmo up

@@ -1,1 +1,1 @@
-docker compose --profile airflow up  --build
+docker compose --profile airflow3 up --build
