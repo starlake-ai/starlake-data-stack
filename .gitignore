@@ -9,3 +9,8 @@ logs
 pgdata
 projects
 .env
+.vscode/
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars

@@ -34,5 +34,13 @@ airflow api-server &
 airflow scheduler &
 exec airflow dag-processor &
 
+
+airflow users create \
+  --username airflow \
+  --firstname airflow \
+  --lastname airflow \
+  --role Admin \
+  --email airflow@example.com \
+  --password airflow
 wait -n
 exit $?

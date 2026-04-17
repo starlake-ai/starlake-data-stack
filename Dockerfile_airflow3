@@ -1,7 +1,5 @@
-# Use the official Apache Airflow image as the base 
-# https://github.com/apache/airflow/issues/53103
-FROM apache/airflow:3.1.1
-#2.11.0
+# Use the official Apache Airflow image as the base
+FROM apache/airflow:3.1.8
 
 # Switch to root user to install additional packages
 USER root

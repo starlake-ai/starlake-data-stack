@@ -13,7 +13,7 @@ Starlake provides prebuilt data stacks that can be run with a single command. Th
 
 ![Pragmatic Open Data Stack](images/pragmatic-open-data-stack.png)
 
-The Pragmatic Open Data Stack is a ready-to-use data stack that includes Starlake with Airflow 3, DuckLake, Minio (optional)and Gizmo.
+The Pragmatic Open Data Stack is a ready-to-use data stack that includes Starlake with Airflow 3, DuckLake, Minio (optional) and Gizmo.
 
 ### Pragmatic BigQuery Data Stack
 
@@ -25,13 +25,13 @@ The Pragmatic BigQuery Data Stack is a ready-to-use data stack that includes Sta
 
 ![Pragmatic Snowflake Data Stack](images/pragmatic-snowflake-data-stack.png)
 
-The Pragmatic Snowflake Data Stack is a ready-to-use data stack that includes Starlake with Snoflake Tasks.
+The Pragmatic Snowflake Data Stack is a ready-to-use data stack that includes Starlake with Snowflake Tasks.
 
 ### Pragmatic AWS Redshift Data Stack
 
 ![Pragmatic Redshift Data Stack](images/pragmatic-redshift-data-stack.png)
 
-The Pragmatic W Redshift Data Stack is a ready-to-use data stack that includes Starlake with Airflow 3.
+The Pragmatic AWS Redshift Data Stack is a ready-to-use data stack that includes Starlake with Airflow 3.
 
 ## Quick Start
 
@@ -80,10 +80,10 @@ Starlake uses Docker Compose **profiles** to manage different configurations (e.
 ### Available Profiles
 
 - **`airflow3`**: Runs Starlake with Airflow 3.
-- **`dagster`**: Runs Starlake with Dagster (requires `docker-compose-dagster.yml` if running separately, but defined in main compose for some services).
+- **`dagster`**: Runs Starlake with Dagster.
 - **`gizmo`**: Runs the Starlake Gizmo service.
 - **`minio`**: Runs MinIO Object Storage.
-- **`snowflake`**: Profile for Snowflake integration.
+- **`snowflake`**: Runs Starlake with Snowflake Tasks.
 - **`ai`**: Runs the Starlake AI Agent service and enables the AI features in Starlake UI.
 
 ### Start Services
@@ -97,7 +97,7 @@ COMPOSE_PROFILES=airflow3,gizmo SL_API_APP_TYPE=ducklake docker compose up  --bu
 or simply
 
 ```
-$ ./dags-stack.sh
+$ ./data-stack.sh
 ```
 
 To start the Pragmatic Duck Data Stack with Airflow 3 & Minio and Gizmo, use the following command:
@@ -112,10 +112,16 @@ To start the stack with a specific profile (e.g., `airflow3`) and address any Cl
 COMPOSE_PROFILES=airflow3 docker compose up  --build
 ```
 
-Tio run with Dagster, use the following command:
+To run with Dagster, use the following command:
 
 ```bash
-COMPOSE_PROFILES=dagster docker compose up  --build
+COMPOSE_PROFILES=dagster docker compose up --build
+```
+
+To run with Snowflake Tasks, use the following command:
+
+```bash
+COMPOSE_PROFILES=snowflake docker compose up --build
 ```
 
 ### Stop Services
@@ -127,6 +133,16 @@ COMPOSE_PROFILES=airflow3,gizmo,minio SL_API_APP_TYPE=ducklake docker compose do
 ```
 
 _Note: You must specify the same profiles used to start the services to ensure they are all stopped correctly._
+
+## Cloud Deployment
+
+To deploy the Starlake Data Stack to a Cloud Provider using Terraform, please refer to the specific installation guide:
+
+- [Google Cloud Platform (GCP)](terraform/gcp/INSTALL.md)
+- [Amazon Web Services (AWS)](terraform/aws/INSTALL.md)
+- [Microsoft Azure](terraform/azure/INSTALL.md)
+- [OVH Public Cloud](terraform/ovh/INSTALL.md)
+- [Scaleway](terraform/scaleway/INSTALL.md)
 
 ## Accessing Services
 
